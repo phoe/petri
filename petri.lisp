@@ -81,35 +81,34 @@
       (funcall (callback transition) input output)
       (transmit-output petri-net output (places-to transition)))))
 
+(defun transition-not-ready (name requested-count actual-count)
+  (error "Transition not ready: needed ~D tokens from place ~S but only ~D ~
+were available." requested-count name actual-count))
+
 (defun transition-valid-p (transition petri-net &optional errorp)
-  (loop with places-from = (places-from transition)
-        for name being the hash-key of places-from
-        for requested-count = (gethash name places-from)
-        for place = (place petri-net name)
-        for actual-count = (place-count place)
-        when (and (> requested-count actual-count) errorp)
-          do (error "Transition not ready: needed ~D tokens from place ~S ~
-but only ~D were available." requested-count name actual-count)
-        when (> requested-count actual-count)
-          do (return nil)
-        finally (return t)))
+  (let ((places-from (places-from transition)))
+    (flet ((fn (name requested)
+             (let ((actual (place-count (place petri-net name))))
+               (cond ((<= requested actual))
+                     (errorp (transition-not-ready name requested actual))
+                     (t (return-from transition-valid-p nil))))))
+      (maphash #'fn places-from)
+      t)))
 
 (defun collect-input (petri-net places-from)
-  (loop with input = (make-hash-table)
-        for name being the hash-key of places-from
-        for count = (gethash name places-from)
-        for place = (place petri-net name)
-        do (setf (gethash name input)
-                 (uiop:while-collecting (collect)
-                   (dotimes (i count)
-                     (collect (place-remove place)))))
-        finally (return input)))
+  (let ((input (make-hash-table)))
+    (flet ((fn (name count)
+             (setf (gethash name input)
+                   (uiop:while-collecting (collect)
+                     (dotimes (i count)
+                       (collect (place-remove (place petri-net name))))))))
+      (maphash #'fn places-from)
+      input)))
 
 (defun transmit-output (petri-net output places-to)
-  (loop for name in places-to
-        for place = (place petri-net name)
-        do (dolist (token (gethash name output))
-             (place-insert place token))))
+  (dolist (name places-to)
+    (dolist (token (gethash name output))
+      (place-insert (place petri-net name) token))))
 
 (defun make-transition (from to callback)
   (setf from (ensure-list from))
