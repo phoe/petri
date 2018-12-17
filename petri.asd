@@ -7,5 +7,6 @@
   :version "0.0.1"
   :serial t
   :depends-on (#:alexandria
-               #:closer-mop)
+               #:closer-mop
+               #:phoe-toolbox/bag)
   :components ((:file "petri")))
