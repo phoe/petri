@@ -10,9 +10,9 @@
            #:make-transition
            #:transition-valid-p
            #:transition-not-ready
-           #:transition-not-ready-requested-count
-           #:transition-not-ready-actual-count
-           #:transition-not-ready-bag
+           #:requested-count
+           #:actual-count
+           #:condition-bag
            #:petri-net #:bags #:transitions
            #:make-petri-net
            #:find-valid-transitions))
@@ -52,10 +52,18 @@
   (named-lambda execute-transition (petri-net &optional skip-validation-p)
     (unless skip-validation-p
       (transition-valid-p transition petri-net t))
-    (let* ((input (collect-input petri-net (bags-from transition)))
+    (let* ((input (make-hash-table))
            (output (make-hash-table)))
+      (flet ((populate-input (name count)
+               (setf (gethash name input)
+                     (uiop:while-collecting (collect)
+                       (dotimes (i count)
+                         (collect (bag-remove (bag petri-net name))))))))
+        (maphash #'populate-input (bags-from transition)))
       (funcall (callback transition) input output)
-      (transmit-output petri-net output (bags-to transition)))))
+      (dolist (name (bags-to transition))
+        (dolist (token (gethash name output))
+          (bag-insert (bag petri-net name) token))))))
 
 (defun transition-valid-p (transition petri-net &optional errorp)
   (let ((bags-from (bags-from transition)))
@@ -67,24 +75,9 @@
       (maphash #'fn bags-from)
       t)))
 
-(defun collect-input (petri-net bags-from)
-  (let ((input (make-hash-table)))
-    (flet ((fn (name count)
-             (setf (gethash name input)
-                   (uiop:while-collecting (collect)
-                     (dotimes (i count)
-                       (collect (bag-remove (bag petri-net name))))))))
-      (maphash #'fn bags-from)
-      input)))
-
-(defun transmit-output (petri-net output bags-to)
-  (dolist (name bags-to)
-    (dolist (token (gethash name output))
-      (bag-insert (bag petri-net name) token))))
-
 (defun make-transition (from to callback)
-  (setf from (ensure-list from))
-  (setf to (ensure-list to))
+  (setf from (ensure-list from)
+        to (ensure-list to))
   (flet ((listify (forms)
            (uiop:while-collecting (collect)
              (dolist (thing forms)
@@ -96,11 +89,11 @@
 ;;; TRANSITION-NOT-READY
 
 (define-condition transition-not-ready (error)
-  ((%requested-count :reader transition-not-ready-requested-count
+  ((%requested-count :reader requested-count
                      :initarg :requested-count)
-   (%actual-count :reader transition-not-ready-actual-count
+   (%actual-count :reader actual-count
                   :initarg :actual-count)
-   (%bag :reader transition-not-ready-bag
+   (%bag :reader condition-bag
          :initarg :bag))
   (:default-initargs
    :requested-count (required-argument :requested-count)
@@ -111,9 +104,9 @@
 (defun transition-not-ready-report (condition stream)
   (format stream "Transition not ready: needed ~D tokens from bag ~S but ~
 only ~D were available."
-          (transition-not-ready-requested-count condition)
-          (transition-not-ready-bag condition)
-          (transition-not-ready-actual-count condition)))
+          (requested-count condition)
+          (condition-bag condition)
+          (actual-count condition)))
 
 (defun transition-not-ready (bag requested-count actual-count)
   (error 'transition-not-ready :requested-count requested-count
@@ -214,14 +207,15 @@ only ~D were available."
 
 ;;; MACRO DEFINITION
 
-(defmacro make-petri-net (&body forms)
+(defmacro petri-net (&body forms)
   (declare (ignore forms)))
 
 ;; TODO async
 ;; TODO tests
+;; TODO graphs
 ;; TODO macro declaration like below
 
-(make-petri-net
+(petri-net
   (credentials -> #'login -> cookie-jars
                -> #'dl-account -> accounts)
   (accounts -> #'dl-images -> images)
