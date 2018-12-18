@@ -27,4 +27,5 @@
 (defmethod asdf:perform ((o asdf:test-op)
                          (c (eql (asdf:find-system ':petri))))
   (asdf:load-system :petri/test)
-  (uiop:symbol-call :1am :run))
+  (uiop:symbol-call :1am :run
+                    (symbol-value (find-symbol "*PETRI-TESTS*" :petri/test))))
