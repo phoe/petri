@@ -4,6 +4,7 @@
   (:mix #:closer-mop
         #:cl
         #:alexandria
+        #:split-sequence
         #:phoe-toolbox/bag)
   (:reexport #:phoe-toolbox/bag)
   (:export #:transition #:bags-from #:bags-to #:callback
@@ -61,9 +62,26 @@
                          (collect (bag-remove (bag petri-net name))))))))
         (maphash #'populate-input (bags-from transition)))
       (funcall (callback transition) input output)
+      (validate-output-hash-table output transition)
       (dolist (name (bags-to transition))
-        (dolist (token (gethash name output))
-          (bag-insert (bag petri-net name) token))))))
+        (if-let ((hash-table (gethash name output)))
+          (dolist (token hash-table)
+            (bag-insert (bag petri-net name) token))
+          (error "Output ~S was not found in the output hash table." name))))))
+
+(defun validate-output-hash-table (output transition)
+  (let ((alist (hash-table-alist output)))
+    (dolist (entry alist)
+      (destructuring-bind (key . value) entry
+        (assert (symbolp key) ()
+                "Key ~S in the output table is not a symbol." key)
+        (assert (proper-list-p value) ()
+                "Value ~S in the output table is not a proper list." value))))
+  (let ((actual-bags (hash-table-keys output)))
+    (assert (set-equal actual-bags (bags-to transition)) ()
+            "The bags declared in the output hash table and in the ~
+transition differ.~%Output hash table:~S~%Transition:~S~%"
+            actual-bags (bags-to transition))))
 
 (defun transition-valid-p (transition petri-net &optional errorp)
   (let ((bags-from (bags-from transition)))
@@ -81,7 +99,9 @@
   (flet ((listify (forms)
            (uiop:while-collecting (collect)
              (dolist (thing forms)
-               (if (consp thing) (collect thing) (collect (cons thing 1)))))))
+               (if (consp thing)
+                   (collect (cons (first thing) (second thing)))
+                   (collect (cons thing 1)))))))
     (make-instance 'transition :bags-from (alist-hash-table (listify from))
                                :bags-to to
                                :callback callback)))
@@ -124,7 +144,8 @@ only ~D were available."
 
 (defmethod initialize-instance :after ((petri-net petri-net) &key bags)
   (set-funcallable-instance-function petri-net (petri-net-call petri-net))
-  (setf (slot-value petri-net '%bags) (apply #'make-bags bags)))
+  (setf (slot-value petri-net '%bags)
+        (apply #'make-bags (mapcar #'ensure-car bags))))
 
 (defun petri-net-call (petri-net)
   (named-lambda execute-petri-net ()
@@ -162,72 +183,81 @@ only ~D were available."
 
 ;;; MACRO DEFINITION
 
-(defmacro petri-net (&body forms)
-  (declare (ignore forms)))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun form-edges (form)
+    (flet ((test (x y) (and (symbolp x) (symbolp y) (string-equal x y))))
+      (let ((sublists (split-sequence '-> form :test #'test)))
+        (loop for (sublist-1 sublist-2) on sublists
+              while (and sublist-1 sublist-2)
+              nconc (map-product #'list sublist-1 sublist-2)))))
 
-;; (defun form-edges (form)
-;;   (let ((sublists (split-on-delimiter list '->)))
-;;     (loop for (sublist-1 sublist-2) on sublists
-;;           )))
+  (defun bag-form-p (thing)
+    (or (symbolp thing)
+        (and (proper-list-p thing)
+             (= 2 (length thing))
+             (symbolp (first thing))
+             (positive-integer-p (second thing)))))
 
-;; TODO split-sequence
-(defun split-on-delimiter (original-list delimiter)
-  (loop for list = original then tail
-        for (head tail)
-          = (loop for sublist on list
-                  until (eql (car sublist) delimiter)
-                  collect (car sublist) into first-part
-                  finally (return (list first-part (cdr sublist))))
-        until (endp list)
-        collect head))
+  (defun function-form-p (thing)
+    (and (proper-list-p thing)
+         (= 2 (length thing))
+         (eql 'function (first thing))
+         (symbolp (second thing))))
+
+  (flet ((%edges-objects (edges predicate)
+           (let ((hash-table (make-hash-table :test #'equal)))
+             (dolist (edge edges)
+               (cond ((funcall predicate (first edge))
+                      (setf (gethash (first edge) hash-table) t))
+                     ((funcall predicate (second edge))
+                      (setf (gethash (second edge) hash-table) t))))
+             (hash-table-keys hash-table))))
+    (defun edges-transitions (edges)
+      (%edges-objects edges #'function-form-p))
+    (defun edges-bags (edges)
+      (%edges-objects edges #'bag-form-p)))
+
+  (flet ((%edges-bags (edges function-form key-fn value-fn)
+           (flet ((fn (x) (equal (funcall value-fn x) function-form)))
+             (mapcar key-fn (remove-if-not #'fn edges)))))
+    (defun edges-bags-from (edges function-form)
+      (%edges-bags edges function-form #'first #'second))
+    (defun edges-bags-to (edges function-form)
+      (%edges-bags edges function-form #'second #'first))))
+
+(defmacro petri-net (() &body forms)
+  (let* ((edges (mapcan #'form-edges forms))
+         (transitions (edges-transitions edges))
+         (bags (edges-bags edges)))
+    (flet ((make-transition-form (x)
+             `(make-transition ',(edges-bags-from edges x)
+                               ',(edges-bags-to edges x)
+                               ,x)))
+      `(make-petri-net ',bags
+         (list ,@(mapcar #'make-transition-form transitions))))))
+
+;; ;; todo merge into split-sequence
+;; (defun split-on-delimiter (original delimiter)
+;;   (loop for list = original then tail
+;;         for (head tail)
+;;           = (loop for sublist on list
+;;                   until (eql (car sublist) delimiter)
+;;                   collect (car sublist) into first-part
+;;                   finally (return (list first-part (cdr sublist))))
+;;         until (endp list)
+;;         collect head))
 
 ;; TODO async
-;; TODO tests
 ;; TODO graphs
-;; TODO macro declaration like below
+;; TODO validation in macro declaration
+;; TODO bag description for phoe-toolbox
 
-(petri-net
-  (credentials -> #'login -> cookie-jars
-               -> #'dl-account -> accounts)
-  (accounts -> #'dl-images -> images)
-  (accounts -> #'dl-furres
-            -> furres-for-costumes furres-for-portraits furres-for-specitags)
-  (furres-for-costumes -> #'dl-costumes -> costumes)
-  (furres-for-portraits -> #'dl-portraits -> portraits)
-  (furres-for-specitags -> #'dl-specitags -> specitags))
-
-;;; TESTS
-
-(defpackage #:petri/tests
-  (:use #:cl
-        #:alexandria
-        #:petri
-        #:1am))
-
-(in-package #:petri/tests)
-
-(defun test ()
-  (flet ((callback (input output)
-           (setf (gethash 'bar output)
-                 (mapcar #'- (gethash 'foo input)))))
-    (let* ((transitions (list (make-transition 'foo 'bar #'callback)))
-           (petri-net (make-petri-net '(foo bar) transitions)))
-      (mapcar (curry #'bag-insert (bag petri-net 'foo))
-              '(0 1 2 3 4 5 6 7 8 9))
-      (funcall petri-net)
-      (values petri-net (bag-contents (bag petri-net 'bar))))))
-
-(defun test2 ()
-  (flet ((callback-1 (input output)
-           (setf (gethash 'bar output) (mapcar #'- (gethash 'foo input))
-                 (gethash 'baz output) (gethash 'foo input)))
-         (callback-2 (input output)
-           (setf (gethash 'quux output)
-                 (append (gethash 'baz input) (gethash 'bar input)))))
-    (let* ((transitions (list (make-transition 'foo '(bar baz) #'callback-1)
-                              (make-transition '(bar baz) 'quux #'callback-2)))
-           (petri-net (make-petri-net '(foo bar baz quux) transitions)))
-      (mapcar (curry #'bag-insert (bag petri-net 'foo))
-              '(1 2 3))
-      (funcall petri-net)
-      (values petri-net (bag-contents (bag petri-net 'quux))))))
+;; (petri-net ()
+;;   (credentials -> #'login -> cookie-jars
+;;                -> #'dl-account -> accounts)
+;;   (accounts -> #'dl-images -> images)
+;;   (accounts -> #'dl-furres
+;;             -> furres-for-costumes furres-for-portraits furres-for-specitags)
+;;   (furres-for-costumes -> #'dl-costumes -> costumes)
+;;   (furres-for-portraits -> #'dl-portraits -> portraits)
+;;   (furres-for-specitags -> #'dl-specitags -> specitags))
