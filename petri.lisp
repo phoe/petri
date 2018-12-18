@@ -160,7 +160,51 @@ only ~D were available."
 (defun make-petri-net (bags transitions)
   (make-instance 'petri-net :bags bags :transitions transitions))
 
+;;; MACRO DEFINITION
+
+(defmacro petri-net (&body forms)
+  (declare (ignore forms)))
+
+;; (defun form-edges (form)
+;;   (let ((sublists (split-on-delimiter list '->)))
+;;     (loop for (sublist-1 sublist-2) on sublists
+;;           )))
+
+;; TODO split-sequence
+(defun split-on-delimiter (original-list delimiter)
+  (loop for list = original then tail
+        for (head tail)
+          = (loop for sublist on list
+                  until (eql (car sublist) delimiter)
+                  collect (car sublist) into first-part
+                  finally (return (list first-part (cdr sublist))))
+        until (endp list)
+        collect head))
+
+;; TODO async
+;; TODO tests
+;; TODO graphs
+;; TODO macro declaration like below
+
+(petri-net
+  (credentials -> #'login -> cookie-jars
+               -> #'dl-account -> accounts)
+  (accounts -> #'dl-images -> images)
+  (accounts -> #'dl-furres
+            -> furres-for-costumes furres-for-portraits furres-for-specitags)
+  (furres-for-costumes -> #'dl-costumes -> costumes)
+  (furres-for-portraits -> #'dl-portraits -> portraits)
+  (furres-for-specitags -> #'dl-specitags -> specitags))
+
 ;;; TESTS
+
+(defpackage #:petri/tests
+  (:use #:cl
+        #:alexandria
+        #:petri
+        #:1am))
+
+(in-package #:petri/tests)
 
 (defun test ()
   (flet ((callback (input output)
@@ -187,40 +231,3 @@ only ~D were available."
               '(1 2 3))
       (funcall petri-net)
       (values petri-net (bag-contents (bag petri-net 'quux))))))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-;;; MACRO DEFINITION
-
-(defmacro petri-net (&body forms)
-  (declare (ignore forms)))
-
-;; TODO async
-;; TODO tests
-;; TODO graphs
-;; TODO macro declaration like below
-
-(petri-net
-  (credentials -> #'login -> cookie-jars
-               -> #'dl-account -> accounts)
-  (accounts -> #'dl-images -> images)
-  (accounts -> #'dl-furres
-            -> furres-for-costumes furres-for-portraits furres-for-specitags)
-  (furres-for-costumes -> #'dl-costumes -> costumes)
-  (furres-for-portraits -> #'dl-portraits -> portraits)
-  (furres-for-specitags -> #'dl-specitags -> specitags))
