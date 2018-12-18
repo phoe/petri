@@ -67,7 +67,7 @@
         (if-let ((hash-table (gethash name output)))
           (dolist (token hash-table)
             (bag-insert (bag petri-net name) token))
-          (error "Output ~S was not found in the output hash table." name))))))
+          (error "Bag ~S was not found in the output hash table." name))))))
 
 (defun validate-output-hash-table (output transition)
   (let ((alist (hash-table-alist output)))
