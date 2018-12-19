@@ -40,8 +40,7 @@
 
 (define-test test-petri-net-1-2
   (%test (petri-net ()
-           (foo -> #'%test-1-callback)
-           (#'%test-1-callback -> bar))
+           (foo -> #'%test-1-callback -> bar))
          'foo #(0 1 2 3 4 5 6 7 8 9)
          'bar #(0 -1 -2 -3 -4 -5 -6 -7 -8 -9)))
 
@@ -64,8 +63,8 @@
 
 (define-test test-petri-net-2-2
   (%test (petri-net ()
-           (foo -> #'%test-2-callback-1 -> bar baz)
-           (bar baz -> #'%test-2-callback-2 -> quux))
+           (foo -> #'%test-2-callback-1 -> bar baz
+                -> #'%test-2-callback-2 -> quux))
          'foo #(1 2 3)
          'quux #(-3 -2 -1 1 2 3)))
 
@@ -83,8 +82,7 @@
 
 (define-test test-petri-net-3-2
   (%test (petri-net ()
-           ((foo 3) -> #'%test-3-callback)
-           (#'%test-3-callback -> bar))
+           ((foo 3) -> #'%test-3-callback -> bar))
          'foo #(1 1 1 1 1 1 1 1 1)
          'bar #(3 3 3)))
 
@@ -103,7 +101,70 @@
 
 (define-test test-petri-net-4-2
   (%test (petri-net ()
-           (foo -> #'%test-4-callback)
-           (#'%test-4-callback -> bar))
+           (foo -> #'%test-4-callback  -> bar))
          'foo #(3 3 3)
          'bar #(1 1 1 1 1 1 1 1 1)))
+
+;;; NEGATIVE TEST - MISMATCHED OUTPUT
+
+(defun %test-negative-mismatched-callback (input output)
+  (declare (ignore input))
+  (setf (gethash 'bar output) (list 42)
+        (gethash 'baz output) (list 42)))
+
+(define-test test-negative-mismatched-1
+  (signals petri-net-error
+    (%test (make-petri-net '(foo bar)
+             (list (make-transition 'foo 'bar
+                                    #'%test-negative-mismatched-callback)))
+           'foo #(42)
+           'bar #(42))))
+
+(define-test test-negative-mismatched-2
+  (signals petri-net-error
+    (%test (petri-net ()
+             (foo -> #'%test-negative-mismatched-callback -> bar))
+           'foo #(42)
+           'bar #(42))))
+
+;;; NEGATIVE TEST - INVALID KEY
+
+(defun %test-negative-invalid-key-callback (input output)
+  (declare (ignore input))
+  (setf (gethash 42 output) (list 42)))
+
+(define-test test-negative-invalid-key-1
+  (signals petri-net-error
+    (%test (make-petri-net '(foo bar)
+             (list (make-transition 'foo 'bar
+                                    #'%test-negative-invalid-key-callback)))
+           'foo #(42)
+           'bar #(42))))
+
+(define-test test-negative-invalid-key-2
+  (signals petri-net-error
+    (%test (petri-net ()
+             (foo -> #'%test-negative-invalid-key-callback -> bar))
+           'foo #(42)
+           'bar #(42))))
+
+;;; NEGATIVE TEST - INVALID VALUE
+
+(defun %test-negative-invalid-value-callback (input output)
+  (declare (ignore input))
+  (setf (gethash 'bar output) 42))
+
+(define-test test-negative-invalid-value-1
+  (signals petri-net-error
+    (%test (make-petri-net '(foo bar)
+             (list (make-transition 'foo 'bar
+                                    #'%test-negative-invalid-value-callback)))
+           'foo #(42)
+           'bar #(42))))
+
+(define-test test-negative-invalid-value-2
+  (signals petri-net-error
+    (%test (petri-net ()
+             (foo -> #'%test-negative-invalid-value-callback -> bar))
+           'foo #(42)
+           'bar #(42))))

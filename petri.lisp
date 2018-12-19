@@ -10,6 +10,7 @@
   (:export #:transition #:bags-from #:bags-to #:callback
            #:make-transition
            #:transition-valid-p
+           #:petri-net-error #:simple-petri-net-error
            #:transition-not-ready
            #:requested-count
            #:actual-count
@@ -64,24 +65,23 @@
       (funcall (callback transition) input output)
       (validate-output-hash-table output transition)
       (dolist (name (bags-to transition))
-        (if-let ((hash-table (gethash name output)))
-          (dolist (token hash-table)
-            (bag-insert (bag petri-net name) token))
-          (error "Bag ~S was not found in the output hash table." name))))))
+        (dolist (token (gethash name output))
+          (bag-insert (bag petri-net name) token))))))
 
 (defun validate-output-hash-table (output transition)
   (let ((alist (hash-table-alist output)))
     (dolist (entry alist)
       (destructuring-bind (key . value) entry
-        (assert (symbolp key) ()
-                "Key ~S in the output table is not a symbol." key)
-        (assert (proper-list-p value) ()
-                "Value ~S in the output table is not a proper list." value))))
-  (let ((actual-bags (hash-table-keys output)))
-    (assert (set-equal actual-bags (bags-to transition)) ()
-            "The bags declared in the output hash table and in the ~
-transition differ.~%Output hash table:~S~%Transition:~S~%"
-            actual-bags (bags-to transition))))
+        (unless (symbolp key)
+          (petri-net-error "Key ~S in the output table is not a symbol." key))
+        (unless (proper-list-p value)
+          (petri-net-error "Value ~S in the output table is not a proper list."
+                           value)))))
+  (let ((expected (bags-to transition))
+        (actual (hash-table-keys output)))
+    (unless (alexandria:set-equal expected actual)
+      (petri-net-error "Mismatched keys in output table.~%Expected:~S~%Found:~S"
+                       expected actual))))
 
 (defun transition-valid-p (transition petri-net &optional errorp)
   (let ((bags-from (bags-from transition)))
@@ -106,9 +106,19 @@ transition differ.~%Output hash table:~S~%Transition:~S~%"
                                :bags-to to
                                :callback callback)))
 
+;;; PETRI-NET-ERROR
+
+(define-condition petri-net-error (error) ())
+
+(define-condition simple-petri-net-error (petri-net-error simple-condition) ())
+
+(defun petri-net-error (control &rest args)
+  (error 'simple-petri-net-error :format-control control
+                                 :format-arguments args))
+
 ;;; TRANSITION-NOT-READY
 
-(define-condition transition-not-ready (error)
+(define-condition transition-not-ready (petri-net-error)
   ((%requested-count :reader requested-count
                      :initarg :requested-count)
    (%actual-count :reader actual-count
@@ -251,6 +261,8 @@ only ~D were available."
 ;; TODO graphs
 ;; TODO validation in macro declaration
 ;; TODO bag description for phoe-toolbox
+;; TODO declare (foo -> #'bar -> (baz 3)) to mark that exactly three tokens
+;; are supposed to be output from #'bar
 
 ;; (petri-net ()
 ;;   (credentials -> #'login -> cookie-jars
