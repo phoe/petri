@@ -50,23 +50,7 @@
 (defmethod initialize-instance :after ((transition transition) &key)
   (set-funcallable-instance-function transition (transition-call transition)))
 
-(defun transition-call (transition)
-  (named-lambda execute-transition (petri-net &optional skip-validation-p)
-    (unless skip-validation-p
-      (transition-valid-p transition petri-net t))
-    (let* ((input (make-hash-table))
-           (output (make-hash-table)))
-      (flet ((populate-input (name count)
-               (setf (gethash name input)
-                     (uiop:while-collecting (collect)
-                       (dotimes (i count)
-                         (collect (bag-remove (bag petri-net name))))))))
-        (maphash #'populate-input (bags-from transition)))
-      (funcall (callback transition) input output)
-      (validate-output-hash-table output transition)
-      (dolist (name (bags-to transition))
-        (dolist (token (gethash name output))
-          (bag-insert (bag petri-net name) token))))))
+;;; TRANSITION VALIDATION
 
 (defun validate-output-hash-table (output transition)
   (let ((alist (hash-table-alist output)))
@@ -92,6 +76,49 @@
                      (t (return-from transition-valid-p nil))))))
       (maphash #'fn bags-from)
       t)))
+
+;;; TRANSITION PROTOCOL
+
+(defgeneric transition-call (transition))
+
+(defgeneric populate-input (transition petri-net &optional skip-validation-p))
+
+(defgeneric call-callback (transition input output))
+
+(defgeneric populate-output (transition petri-net output))
+
+;;; TRANSITION - IMPLEMENTATION
+
+(defmethod transition-call ((transition transition))
+  (named-lambda execute-transition (petri-net &optional skip-validation-p)
+    (let* ((input (populate-input transition petri-net skip-validation-p))
+           (output (make-hash-table)))
+      (call-callback transition input output)
+      (populate-output transition petri-net output))))
+
+(defmethod populate-input
+    ((transition transition) (petri-net petri-net) &optional skip-validation-p)
+  (unless skip-validation-p
+    (transition-valid-p transition petri-net t))
+  (let ((input (make-hash-table)))
+    (flet ((populate-input (name count)
+             (setf (gethash name input)
+                   (uiop:while-collecting (collect)
+                     (dotimes (i count)
+                       (collect (bag-remove (bag petri-net name))))))))
+      (maphash #'populate-input (bags-from transition)))
+    input))
+
+(defmethod call-callback
+    ((transition transition) (input hash-table) (output hash-table))
+  (funcall (callback transition) input output))
+
+(defmethod populate-output
+    ((transition transition) (petri-net petri-net) (output hash-table))
+  (validate-output-hash-table output transition)
+  (dolist (name (bags-to transition))
+    (dolist (token (gethash name output))
+      (bag-insert (bag petri-net name) token))))
 
 (defun make-transition (from to callback)
   (setf from (ensure-list from)
