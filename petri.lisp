@@ -27,6 +27,54 @@
   (assert (every #'symbolp symbols))
   (alist-hash-table (mapcar (lambda (x) (cons x (make-bag))) symbols)))
 
+;;; PETRI-NET
+
+(defclass petri-net ()
+  ((%bags :accessor bags)
+   (%transitions :accessor transitions
+                 :initarg :transitions))
+  (:metaclass closer-mop:funcallable-standard-class)
+  (:default-initargs :bags (make-hash-table) :transitions '()))
+
+(defmethod print-object ((petri-net petri-net) stream)
+  (print-unreadable-object (petri-net stream :type t)
+    (format stream "(~DP/~DT, ~A)"
+            (hash-table-count (bags petri-net))
+            (length (transitions petri-net))
+            (handler-case
+                (if (find-valid-transition petri-net) :ready :finished)
+              (error () :error)))))
+
+(defmethod initialize-instance :after ((petri-net petri-net) &key bags)
+  (set-funcallable-instance-function petri-net (petri-net-call petri-net))
+  (setf (slot-value petri-net '%bags)
+        (apply #'make-bags (mapcar #'ensure-car bags))))
+
+(defun petri-net-call (petri-net)
+  (named-lambda execute-petri-net ()
+    (loop for transition = (find-valid-transition petri-net)
+          while transition do (funcall transition petri-net t))
+    petri-net))
+
+(defgeneric bag (petri-net name)
+  (:method ((petri-net petri-net) (name symbol))
+    (gethash name (bags petri-net))))
+
+(defgeneric (setf bag) (new-value petri-net name)
+  (:method ((new-value symbol) (petri-net petri-net) (name symbol))
+    (let ((foundp (nth-value 1 (gethash name (bags petri-net)))))
+      (if foundp
+          (setf (gethash name (bags petri-net)) new-value)
+          (remhash name (bags petri-net)))
+      new-value)))
+
+(defun find-valid-transition (petri-net)
+  (find-if (rcurry #'transition-valid-p petri-net)
+           (shuffle (transitions petri-net))))
+
+(defun make-petri-net (bags transitions)
+  (make-instance 'petri-net :bags bags :transitions transitions))
+
 ;;; TRANSITION
 
 (defclass transition ()
@@ -169,54 +217,6 @@ only ~D were available."
   (error 'transition-not-ready :requested-count requested-count
                                :bag bag
                                :actual-count actual-count))
-
-;;; PETRI-NET
-
-(defclass petri-net ()
-  ((%bags :accessor bags)
-   (%transitions :accessor transitions
-                 :initarg :transitions))
-  (:metaclass closer-mop:funcallable-standard-class)
-  (:default-initargs :bags (make-hash-table) :transitions '()))
-
-(defmethod initialize-instance :after ((petri-net petri-net) &key bags)
-  (set-funcallable-instance-function petri-net (petri-net-call petri-net))
-  (setf (slot-value petri-net '%bags)
-        (apply #'make-bags (mapcar #'ensure-car bags))))
-
-(defun petri-net-call (petri-net)
-  (named-lambda execute-petri-net ()
-    (loop for transition = (find-valid-transition petri-net)
-          while transition do (funcall transition petri-net t))
-    petri-net))
-
-(defmethod print-object ((petri-net petri-net) stream)
-  (print-unreadable-object (petri-net stream :type t)
-    (format stream "(~DP/~DT, ~A)"
-            (hash-table-count (bags petri-net))
-            (length (transitions petri-net))
-            (handler-case
-                (if (find-valid-transition petri-net) :ready :finished)
-              (error () :error)))))
-
-(defgeneric bag (petri-net name)
-  (:method ((petri-net petri-net) (name symbol))
-    (gethash name (bags petri-net))))
-
-(defgeneric (setf bag) (new-value petri-net name)
-  (:method ((new-value symbol) (petri-net petri-net) (name symbol))
-    (let ((foundp (nth-value 1 (gethash name (bags petri-net)))))
-      (if foundp
-          (setf (gethash name (bags petri-net)) new-value)
-          (remhash name (bags petri-net)))
-      new-value)))
-
-(defun find-valid-transition (petri-net)
-  (find-if (rcurry #'transition-valid-p petri-net)
-           (shuffle (transitions petri-net))))
-
-(defun make-petri-net (bags transitions)
-  (make-instance 'petri-net :bags bags :transitions transitions))
 
 ;;; MACRO DEFINITION
 
