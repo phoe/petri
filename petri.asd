@@ -10,7 +10,11 @@
                #:closer-mop
                #:1am
                #:split-sequence
-               #:phoe-toolbox/bag)
+               #:phoe-toolbox/bag
+               ;; ASYNC
+               #:bordeaux-threads
+               #:lparallel
+               #:trivial-backtrace)
   :components ((:file "petri")))
 
 (asdf:defsystem #:petri/test

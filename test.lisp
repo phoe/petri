@@ -20,11 +20,12 @@
      (1am:test ,name ,@body)
      (pushnew ',name *petri-tests*)))
 
-(defun %test (petri-net input-bag input output-bag output)
-  (map nil (curry #'bag-insert (bag petri-net input-bag)) input)
-  (funcall petri-net)
-  (let ((contents (bag-contents (bag petri-net output-bag))))
-    (is (set-equal (coerce output 'list) (coerce contents 'list)))))
+(defun make-test (input-bag input output-bag output)
+  (lambda (petri-net)
+    (map nil (curry #'bag-insert (bag petri-net input-bag)) input)
+    (funcall petri-net)
+    (let ((contents (bag-contents (bag petri-net output-bag))))
+      (is (set-equal (coerce output 'list) (coerce contents 'list))))))
 
 ;;; TEST 1
 
@@ -32,17 +33,14 @@
   (setf (gethash 'bar output)
         (mapcar #'- (gethash 'foo input))))
 
-(define-test test-petri-net-1-1
-  (%test (make-petri-net '(foo bar)
-           (list (make-transition 'foo 'bar #'%test-1-callback)))
-         'foo #(0 1 2 3 4 5 6 7 8 9)
-         'bar #(0 -1 -2 -3 -4 -5 -6 -7 -8 -9)))
-
-(define-test test-petri-net-1-2
-  (%test (petri-net ()
-           (foo -> #'%test-1-callback -> bar))
-         'foo #(0 1 2 3 4 5 6 7 8 9)
-         'bar #(0 -1 -2 -3 -4 -5 -6 -7 -8 -9)))
+(define-test test-petri-net-1
+  (let ((test (make-test 'foo #(0 1 2 3 4 5 6 7 8 9)
+                         'bar #(0 -1 -2 -3 -4 -5 -6 -7 -8 -9)))
+        (args `((foo bar) ((foo bar ,#'%test-1-callback)))))
+    (funcall test (apply #'make-petri-net args))
+    (funcall test (apply #'make-threaded-petri-net args))
+    (funcall test (petri-net () (foo -> #'%test-1-callback -> bar)))
+    (funcall test (threaded-petri-net () (foo -> #'%test-1-callback -> bar)))))
 
 ;;; TEST 2
 
@@ -54,19 +52,20 @@
   (setf (gethash 'quux output)
         (append (gethash 'baz input) (gethash 'bar input))))
 
-(define-test test-petri-net-2-1
-  (%test (make-petri-net '(foo bar baz quux)
-           (list (make-transition 'foo '(bar baz) #'%test-2-callback-1)
-                 (make-transition '(bar baz) 'quux #'%test-2-callback-2)))
-         'foo #(1 2 3)
-         'quux #(-3 -2 -1 1 2 3)))
-
-(define-test test-petri-net-2-2
-  (%test (petri-net ()
-           (foo -> #'%test-2-callback-1 -> bar baz
-                -> #'%test-2-callback-2 -> quux))
-         'foo #(1 2 3)
-         'quux #(-3 -2 -1 1 2 3)))
+(define-test test-petri-net-2
+  (let ((test (make-test 'foo #(1 2 3)
+                         'quux #(-3 -2 -1 1 2 3)))
+        (args `((foo bar baz quux)
+                ((foo (bar baz) ,#'%test-2-callback-1)
+                 ((bar baz) quux ,#'%test-2-callback-2)))))
+    (funcall test (apply #'make-petri-net args))
+    (funcall test (apply #'make-threaded-petri-net args))
+    (funcall test (petri-net ()
+                    (foo -> #'%test-2-callback-1 -> bar baz
+                         -> #'%test-2-callback-2 -> quux)))
+    (funcall test (threaded-petri-net ()
+                    (foo -> #'%test-2-callback-1 -> bar baz
+                         -> #'%test-2-callback-2 -> quux)))))
 
 ;;; TEST 3
 
@@ -74,17 +73,16 @@
   (setf (gethash 'bar output)
         (list (reduce #'+ (gethash 'foo input)))))
 
-(define-test test-petri-net-3-1
-  (%test (make-petri-net '(foo bar)
-           (list (make-transition '((foo 3)) 'bar #'%test-3-callback)))
-         'foo #(1 1 1 1 1 1 1 1 1)
-         'bar #(3 3 3)))
-
-(define-test test-petri-net-3-2
-  (%test (petri-net ()
-           ((foo 3) -> #'%test-3-callback -> bar))
-         'foo #(1 1 1 1 1 1 1 1 1)
-         'bar #(3 3 3)))
+(define-test test-petri-net-3
+  (let ((test (make-test 'foo #(1 1 1 1 1 1 1 1 1)
+                         'bar #(3 3 3)))
+        (args `((foo bar) ((((foo 3)) bar ,#'%test-3-callback)))))
+    (funcall test (apply #'make-petri-net args))
+    (funcall test (apply #'make-threaded-petri-net args))
+    (funcall test (petri-net ()
+                    ((foo 3) -> #'%test-3-callback -> bar)))
+    (funcall test (threaded-petri-net ()
+                    ((foo 3) -> #'%test-3-callback -> bar)))))
 
 ;;; TEST 4
 
@@ -93,17 +91,16 @@
     (dotimes (i 3)
       (push (/ value 3) (gethash 'bar output)))))
 
-(define-test test-petri-net-4-1
-  (%test (make-petri-net '(foo bar)
-           (list (make-transition 'foo 'bar #'%test-4-callback)))
-         'foo #(3 3 3)
-         'bar #(1 1 1 1 1 1 1 1 1)))
-
-(define-test test-petri-net-4-2
-  (%test (petri-net ()
-           (foo -> #'%test-4-callback  -> bar))
-         'foo #(3 3 3)
-         'bar #(1 1 1 1 1 1 1 1 1)))
+(define-test test-petri-net-4
+  (let ((test (make-test 'foo #(3 3 3)
+                         'bar #(1 1 1 1 1 1 1 1 1)))
+        (args `((foo bar) ((foo bar ,#'%test-4-callback)))))
+    (funcall test (apply #'make-petri-net args))
+    (funcall test (apply #'make-threaded-petri-net args))
+    (funcall test (petri-net ()
+                    ((foo 3) -> #'%test-4-callback -> bar)))
+    (funcall test (threaded-petri-net ()
+                    ((foo 3) -> #'%test-4-callback -> bar)))))
 
 ;;; NEGATIVE TEST - MISMATCHED OUTPUT
 
@@ -112,20 +109,20 @@
   (setf (gethash 'bar output) (list 42)
         (gethash 'baz output) (list 42)))
 
-(define-test test-negative-mismatched-1
-  (signals petri-net-error
-    (%test (make-petri-net '(foo bar)
-             (list (make-transition 'foo 'bar
-                                    #'%test-negative-mismatched-callback)))
-           'foo #(42)
-           'bar #(42))))
-
-(define-test test-negative-mismatched-2
-  (signals petri-net-error
-    (%test (petri-net ()
-             (foo -> #'%test-negative-mismatched-callback -> bar))
-           'foo #(42)
-           'bar #(42))))
+(define-test test-negative-mismatched
+  (let ((test (make-test 'foo #(3 3 3)
+                         'bar #(1 1 1 1 1 1 1 1 1)))
+        (args `((foo bar) ((foo bar ,#'%test-negative-mismatched-callback)))))
+    (signals petri-net-error
+      (funcall test (apply #'make-petri-net args)))
+    (signals petri-net-error
+      (funcall test (apply #'make-threaded-petri-net args)))
+    (signals petri-net-error
+      (funcall test (petri-net ()
+                      (foo -> #'%test-negative-mismatched-callback -> bar))))
+    (signals petri-net-error
+      (funcall test (threaded-petri-net ()
+                      (foo -> #'%test-negative-mismatched-callback -> bar))))))
 
 ;;; NEGATIVE TEST - INVALID KEY
 
@@ -133,20 +130,20 @@
   (declare (ignore input))
   (setf (gethash 42 output) (list 42)))
 
-(define-test test-negative-invalid-key-1
-  (signals petri-net-error
-    (%test (make-petri-net '(foo bar)
-             (list (make-transition 'foo 'bar
-                                    #'%test-negative-invalid-key-callback)))
-           'foo #(42)
-           'bar #(42))))
-
-(define-test test-negative-invalid-key-2
-  (signals petri-net-error
-    (%test (petri-net ()
-             (foo -> #'%test-negative-invalid-key-callback -> bar))
-           'foo #(42)
-           'bar #(42))))
+(define-test test-negative-invalid-key
+  (let ((test (make-test 'foo #(42)
+                         'bar #(42)))
+        (args `((foo bar) ((foo bar ,#'%test-negative-invalid-key-callback)))))
+    (signals petri-net-error
+      (funcall test (apply #'make-petri-net args)))
+    (signals petri-net-error
+      (funcall test (apply #'make-threaded-petri-net args)))
+    (signals petri-net-error
+      (funcall test (petri-net ()
+                      (foo -> #'%test-negative-invalid-key-callback -> bar))))
+    (signals petri-net-error
+      (funcall test (threaded-petri-net ()
+                      (foo -> #'%test-negative-invalid-key-callback -> bar))))))
 
 ;;; NEGATIVE TEST - INVALID VALUE
 
@@ -154,17 +151,35 @@
   (declare (ignore input))
   (setf (gethash 'bar output) 42))
 
-(define-test test-negative-invalid-value-1
-  (signals petri-net-error
-    (%test (make-petri-net '(foo bar)
-             (list (make-transition 'foo 'bar
-                                    #'%test-negative-invalid-value-callback)))
-           'foo #(42)
-           'bar #(42))))
+(define-test test-negative-invalid-value
+  (let ((test (make-test 'foo #(42)
+                         'bar #(42)))
+        (args `((foo bar) ((foo bar ,#'%test-negative-invalid-value-callback)))))
+    (signals petri-net-error
+      (funcall test (apply #'make-petri-net args)))
+    (signals petri-net-error
+      (funcall test (apply #'make-threaded-petri-net args)))
+    (signals petri-net-error
+      (funcall test
+               (petri-net ()
+                 (foo -> #'%test-negative-invalid-value-callback -> bar))))
+    (signals petri-net-error
+      (funcall test
+               (threaded-petri-net ()
+                 (foo -> #'%test-negative-invalid-value-callback -> bar))))))
 
-(define-test test-negative-invalid-value-2
-  (signals petri-net-error
-    (%test (petri-net ()
-             (foo -> #'%test-negative-invalid-value-callback -> bar))
-           'foo #(42)
-           'bar #(42))))
+;;; TEST-TIME
+;;; This verifies that the threaded net is indeed paralellizing execution.
+;;; Uncomment when needed, manually compare TIME results.
+
+;; (defun %test-time-callback (input output)
+;;   (sleep 0.1)
+;;   (setf (gethash 'bar output)
+;;         (mapcar #'- (gethash 'foo input))))
+
+;; (define-test test-time
+;;   (let ((test (make-test 'foo #(0 1 2 3 4 5 6 7 8 9)
+;;                          'bar #(0 -1 -2 -3 -4 -5 -6 -7 -8 -9)))
+;;         (args `((foo bar) ((foo bar ,#'%test-time-callback)))))
+;;     (time (funcall test (apply #'make-petri-net args)))
+;;     (time (funcall test (apply #'make-threaded-petri-net args)))))
