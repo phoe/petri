@@ -65,7 +65,8 @@
 
 (defmethod initialize-instance :after
     ((petri-net petri-net) &key bags transitions)
-  (set-funcallable-instance-function petri-net (make-petri-net-funcallable-function petri-net))
+  (set-funcallable-instance-function
+   petri-net (make-petri-net-funcallable-function petri-net))
   (let ((constructor (petri-net-transition-constructor petri-net)))
     (setf (transitions petri-net)
           (mapcar (curry #'apply constructor) transitions)))
@@ -122,7 +123,8 @@
             (no-one-element-lists (bags-to transition)))))
 
 (defmethod initialize-instance :after ((transition transition) &key)
-  (set-funcallable-instance-function transition (make-transition-funcallable-function transition)))
+  (set-funcallable-instance-function
+   transition (make-transition-funcallable-function transition)))
 
 ;;; TRANSITION VALIDATION
 
