@@ -33,6 +33,22 @@
   (assert (every #'symbolp symbols))
   (alist-hash-table (mapcar (lambda (x) (cons x (make-bag))) symbols)))
 
+;;; PETRI NET PROTOCOL
+
+(defgeneric petri-net-transition-constructor (petri-net))
+
+(defgeneric make-petri-net-funcallable-function (petri-net))
+
+;;; TRANSITION PROTOCOL
+
+(defgeneric make-transition-funcallable-function (transition))
+
+(defgeneric populate-input (transition petri-net &optional skip-validation-p))
+
+(defgeneric call-callback (transition input output))
+
+(defgeneric populate-output (transition petri-net output))
+
 ;;; PETRI-NET
 
 (defclass petri-net ()
@@ -49,37 +65,31 @@
 
 (defmethod initialize-instance :after
     ((petri-net petri-net) &key bags transitions)
-  (set-funcallable-instance-function petri-net (petri-net-call petri-net))
+  (set-funcallable-instance-function petri-net (make-petri-net-funcallable-function petri-net))
   (let ((constructor (petri-net-transition-constructor petri-net)))
     (setf (transitions petri-net)
           (mapcar (curry #'apply constructor) transitions)))
   (setf (slot-value petri-net '%bags)
         (apply #'make-bags (mapcar #'ensure-car bags))))
 
-(defgeneric petri-net-transition-constructor (petri-net))
-
 (defmethod petri-net-transition-constructor ((petri-net petri-net))
   #'make-transition)
 
-(defgeneric petri-net-call (petri-net))
-
-(defmethod petri-net-call ((petri-net petri-net))
+(defmethod make-petri-net-funcallable-function ((petri-net petri-net))
   (named-lambda execute-petri-net ()
     (loop for transition = (find-valid-transition petri-net)
           while transition do (funcall transition petri-net t))
     petri-net))
 
-(defgeneric bag (petri-net name)
-  (:method ((petri-net petri-net) (name symbol))
-    (gethash name (bags petri-net))))
+(defun bag (petri-net name)
+  (gethash name (bags petri-net)))
 
-(defgeneric (setf bag) (new-value petri-net name)
-  (:method ((new-value symbol) (petri-net petri-net) (name symbol))
-    (let ((foundp (nth-value 1 (gethash name (bags petri-net)))))
-      (if foundp
-          (setf (gethash name (bags petri-net)) new-value)
-          (remhash name (bags petri-net)))
-      new-value)))
+(defun (setf bag) (new-value petri-net name)
+  (let ((foundp (nth-value 1 (gethash name (bags petri-net)))))
+    (if foundp
+        (setf (gethash name (bags petri-net)) new-value)
+        (remhash name (bags petri-net)))
+    new-value))
 
 (defun find-valid-transition (petri-net)
   (find-if (rcurry #'transition-valid-p petri-net)
@@ -112,7 +122,7 @@
             (no-one-element-lists (bags-to transition)))))
 
 (defmethod initialize-instance :after ((transition transition) &key)
-  (set-funcallable-instance-function transition (transition-call transition)))
+  (set-funcallable-instance-function transition (make-transition-funcallable-function transition)))
 
 ;;; TRANSITION VALIDATION
 
@@ -141,19 +151,9 @@
       (maphash #'fn bags-from)
       t)))
 
-;;; TRANSITION PROTOCOL
-
-(defgeneric transition-call (transition))
-
-(defgeneric populate-input (transition petri-net &optional skip-validation-p))
-
-(defgeneric call-callback (transition input output))
-
-(defgeneric populate-output (transition petri-net output))
-
 ;;; TRANSITION - IMPLEMENTATION
 
-(defmethod transition-call ((transition transition))
+(defmethod make-transition-funcallable-function ((transition transition))
   (named-lambda execute-transition (petri-net &optional skip-validation-p)
     (let* ((input (populate-input transition petri-net skip-validation-p))
            (output (make-hash-table)))
@@ -300,7 +300,7 @@ only ~D were available."
 (defmethod petri-net-transition-constructor ((petri-net threaded-petri-net))
   #'make-threaded-transition)
 
-(defmethod petri-net-call ((petri-net threaded-petri-net))
+(defmethod make-petri-net-funcallable-function ((petri-net threaded-petri-net))
   (named-lambda execute-threaded-petri-net ()
     (bt:with-lock-held ((lock petri-net))
       (spawn-transitions petri-net))
@@ -326,7 +326,7 @@ only ~D were available."
 (defclass threaded-transition (transition) ()
   (:metaclass closer-mop:funcallable-standard-class))
 
-(defmethod transition-call ((transition threaded-transition))
+(defmethod make-transition-funcallable-function ((transition threaded-transition))
   (named-lambda execute-threaded-transition (input petri-net)
     (handler-bind ((error (lambda (e)
                             (return-from execute-threaded-transition
