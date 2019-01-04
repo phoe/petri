@@ -250,28 +250,3 @@
 ;;         (args `((foo bar) ((foo bar ,#'%test-time-callback)))))
 ;;     (time (funcall test (apply #'make-petri-net args)))
 ;;     (time (funcall test (apply #'make-threaded-petri-net args)))))
-
-;; Define the callback functions for the transition: one which negates its
-;; arguments and the other which passes them without any change.
-(flet ((callback-negation (input output)
-         (push (- (pop (gethash 'foo input))) (gethash 'bar output)))
-       (callback-identity (input output)
-         (push (pop (gethash 'foo input)) (gethash 'bar output))))
-  ;; Create the petri net object.
-  (let ((petri-net (make-petri-net
-                    ;; Define bags FOO and BAR.
-                    '(foo bar)
-                    ;; Define two transitions:
-                    ;; * one that takes one token from FOO, outputs one token to
-                    ;;   BAR, and calls CALLBACK-IDENTITY,
-                    ;; * one that takes one token from FOO, outputs one token to
-                    ;;   BAR, and calls CALLBACK-NEGATION.
-                    `((((foo 1)) ((bar 1)) ,#'callback-negation)
-                      (((foo 1)) ((bar 1)) ,#'callback-identity)))))
-    ;; Populate bag FOO with data.
-    (dolist (i '(1 2 3 4 5 6 7 8 9 0))
-      (bag-insert (bag-of petri-net 'foo) i))
-    ;; Funcall the Petri net.
-    (funcall petri-net)
-    ;; Access the contents of bag BAR.
-    (bag-contents (bag-of petri-net 'bar))))
