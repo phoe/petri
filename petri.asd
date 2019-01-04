@@ -25,6 +25,16 @@
                #:trivial-backtrace)
   :components ((:file "threaded")))
 
+(asdf:defsystem #:petri/graph
+  :description "An implementation of Petri nets - CL-DOT integration"
+  :author "Michał \"phoe\" Herda <phoe@disroot.org>"
+  :license  "MIT"
+  :version "0.0.1"
+  :serial t
+  :depends-on (#:petri
+               #:cl-dot)
+  :components ((:file "graph")))
+
 (asdf:defsystem #:petri/test
   :description "Tests for PETRI-NET"
   :author "Michał \"phoe\" Herda <phoe@disroot.org>"

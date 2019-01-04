@@ -339,15 +339,3 @@ only ~D were available."
                   (list ,@(remove-duplicates
                            (mapcar #'make-transition-form transitions)
                            :test #'equal)))))))
-
-;; TODO graphs
-
-;; (petri-net ()
-;;   (credentials -> #'login -> cookie-jars
-;;                -> #'dl-account -> accounts)
-;;   (accounts -> #'dl-images -> images)
-;;   (accounts -> #'dl-furres
-;;             -> furres-for-costumes furres-for-portraits furres-for-specitags)
-;;   (furres-for-costumes -> #'dl-costumes -> costumes)
-;;   (furres-for-portraits -> #'dl-portraits -> portraits)
-;;   (furres-for-specitags -> #'dl-specitags -> specitags))
