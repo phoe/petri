@@ -7,18 +7,12 @@
           #:split-sequence
           #:phoe-toolbox/bag)
   (:reexport #:phoe-toolbox/bag)
-  (:export #:transition #:bags-from #:bags-to #:callback
-           #:make-transition
-           ;; TODO do we need to explicitly export transitions symbols?
-           #:transition-ready-p
-           #:find-ready-transitions
-           #:petri-net-error #:simple-petri-net-error
-           #:transition-not-ready
-           #:requested-count
-           #:actual-count
-           #:condition-bag
-           #:petri-net #:bags #:transitions
-           #:make-petri-net))
+  (:export #:petri-net
+           #:make-petri-net
+           #:bag-of
+           #:bag-names
+           #:petri-net-error
+           #:simple-petri-net-error))
 
 (in-package #:petri)
 
@@ -72,24 +66,30 @@
   #'make-transition)
 
 (defmethod make-petri-net-funcallable-function ((petri-net petri-net))
-  (named-lambda execute-petri-net ()
+  (named-lambda execute-petri-net (&optional (compress t))
     (loop for transition = (find-ready-transition petri-net)
           while transition do (funcall transition petri-net t))
+    (when compress
+      (dolist (bag (hash-table-values (bags petri-net)))
+        (bag-compress bag)))
     petri-net))
 
-(defun bag (petri-net name)
+(defun bag-of (petri-net name)
   (gethash name (bags petri-net)))
 
-(defun (setf bag) (new-value petri-net name)
+(defun (setf bag-of) (new-value petri-net name)
   (let ((foundp (nth-value 1 (gethash name (bags petri-net)))))
     (if foundp
         (setf (gethash name (bags petri-net)) new-value)
         (remhash name (bags petri-net)))
     new-value))
 
+(defun bag-names (petri-net)
+  (hash-table-keys (bags petri-net)))
+
 (defun find-ready-transition (petri-net)
   (find-if (rcurry #'transition-ready-p petri-net)
-           (shuffle (transitions petri-net))))
+           (shuffle (copy-list (transitions petri-net)))))
 
 (defun make-petri-net (bags transitions)
   (make-instance 'petri-net :bags bags :transitions transitions))
@@ -149,7 +149,7 @@ Expected ~D elements but found ~D." key expected-count actual-count))))))))
 (defun transition-ready-p (transition petri-net &optional errorp)
   (let ((bags-from (bags-from transition)))
     (flet ((fn (name requested)
-             (let ((actual (bag-count (bag petri-net name))))
+             (let ((actual (bag-count (bag-of petri-net name))))
                (cond ((and (symbolp requested)
                            (string= '! requested)
                            (/= 0 actual))
@@ -183,7 +183,7 @@ Expected ~D elements but found ~D." key expected-count actual-count))))))))
                (setf (gethash name input)
                      (uiop:while-collecting (collect)
                        (dotimes (i count)
-                         (collect (bag-remove (bag petri-net name)))))))))
+                         (collect (bag-remove (bag-of petri-net name)))))))))
       (maphash #'populate-input (bags-from transition)))
     input))
 
@@ -196,7 +196,7 @@ Expected ~D elements but found ~D." key expected-count actual-count))))))))
   (validate-output-hash-table output transition)
   (dolist (name (hash-table-keys (bags-to transition)))
     (dolist (token (gethash name output))
-      (bag-insert (bag petri-net name) token))))
+      (bag-insert (bag-of petri-net name) token))))
 
 (defun make-transition (from to callback &optional (class 'transition))
   (setf from (ensure-list from)
@@ -220,6 +220,8 @@ Expected ~D elements but found ~D." key expected-count actual-count))))))))
 (defun petri-net-error (control &rest args)
   (error 'simple-petri-net-error :format-control control
                                  :format-arguments args))
+
+;;; TODO remove it, we never actually use it
 
 (define-condition transition-not-ready (petri-net-error)
   ((%requested-count :reader requested-count
@@ -327,7 +329,7 @@ only ~D were available."
     (defun edges-bags-to (edges function-form)
       (%edges-bags edges function-form #'second #'first))))
 
-(defmacro petri-net ((&optional (constructor '#'make-petri-net)) &body forms)
+(defmacro %petri-net (constructor &body forms)
   (let ((edges (mapcan #'form-edges forms)))
     (multiple-value-bind (transitions bags) (edges-objects edges)
       (flet ((make-transition-form (x)
@@ -339,3 +341,6 @@ only ~D were available."
                   (list ,@(remove-duplicates
                            (mapcar #'make-transition-form transitions)
                            :test #'equal)))))))
+
+(defmacro petri-net (() &body forms)
+  `(%petri-net #'make-petri-net ,@forms))

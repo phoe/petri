@@ -11,16 +11,15 @@
   (:reexport #:phoe-toolbox/bag)
   (:export ;; ASYNC
            #:threaded-petri-net
-           #:threaded-transition
-           #:threaded-petri-net-error
-           #:make-threaded-petri-net))
+           #:make-threaded-petri-net
+           #:threaded-petri-net-error))
 
 (in-package #:petri/threaded)
 
 ;;; THREADED
 
 (defclass threaded-petri-net (petri-net)
-  ((%lock :reader lock
+  ((%lock :reader lock-of
           :initform (bt:make-lock))
    (%thread-queue :reader thread-queue
                   :initform (lparallel.queue:make-queue)))
@@ -32,10 +31,14 @@
 
 (defmethod petri::make-petri-net-funcallable-function
     ((petri-net threaded-petri-net))
-  (named-lambda execute-threaded-petri-net ()
-    (bt:with-lock-held ((lock petri-net))
+  (named-lambda execute-threaded-petri-net (&optional (compress t))
+    (bt:with-lock-held ((lock-of petri-net))
       (spawn-transitions petri-net))
-    (join-all-threads petri-net)))
+    (when compress
+      (dolist (bag (hash-table-values (petri::bags petri-net)))
+        (bag-compress bag)))
+    (join-all-threads petri-net)
+    petri-net))
 
 (defun spawn-transitions (petri-net)
   (flet ((spawn ()
@@ -54,7 +57,7 @@
              (when (typep condition 'condition)
                (threaded-petri-net-error condition backtrace)))))
 
-(defclass threaded-transition (transition) ()
+(defclass threaded-transition (petri::transition) ()
   (:metaclass closer-mop:funcallable-standard-class))
 
 (defmethod petri::make-transition-funcallable-function
@@ -65,20 +68,19 @@
                               (values e (print-backtrace e :output nil))))))
       (let ((output (make-hash-table)))
         (petri::call-callback transition input output)
-        (bt:with-lock-held ((lock petri-net))
+        (bt:with-lock-held ((lock-of petri-net))
           (petri::populate-output transition petri-net output)
           (spawn-transitions petri-net))
         (values nil nil)))))
 
 (defun make-threaded-transition (from to callback)
-  (make-transition from to callback 'threaded-transition))
+  (petri::make-transition from to callback 'threaded-transition))
 
 (defun make-threaded-petri-net (bags transitions)
   (make-instance 'threaded-petri-net :bags bags :transitions transitions))
 
-(defmacro threaded-petri-net
-    ((&optional (constructor '#'make-threaded-petri-net)) &body forms)
-  `(petri-net (,constructor) ,@forms))
+(defmacro threaded-petri-net (() &body forms)
+  `(petri::%petri-net #'make-threaded-petri-net ,@forms))
 
 (define-condition threaded-petri-net-error (petri-net-error)
   ((%reason :reader reason
