@@ -4,6 +4,7 @@
   (:use #:cl
         #:alexandria
         #:petri
+        #:petri/threaded
         #:1am)
   (:shadow #:test #:run)
   (:export #:run))
@@ -20,9 +21,13 @@
      (1am:test ,name ,@body)
      (pushnew ',name *petri-tests*)))
 
-(defun make-test (input-bag input output-bag output)
+(defun make-test (input-bag input output-bag output
+                  &key extra-input-bag extra-input)
   (lambda (petri-net)
     (map nil (curry #'bag-insert (bag petri-net input-bag)) input)
+    (when extra-input
+      (map nil (curry #'bag-insert (bag petri-net extra-input-bag))
+           extra-input))
     (funcall petri-net)
     (let ((contents (bag-contents (bag petri-net output-bag))))
       (is (set-equal (coerce output 'list) (coerce contents 'list))))))
@@ -113,6 +118,36 @@
     (funcall test (threaded-petri-net ()
                     (foo -> #'%test-4-callback -> (bar *))))))
 
+;;; TEST 5
+
+(defun %test-5-callback (input output)
+  (declare (ignore input))
+  (push 42 (gethash 'baz output)))
+
+(define-test test-petri-net-5
+  (let ((test (make-test 'foo #(1 2 3 4 5)
+                         'baz #(42 42 42 42 42)))
+        (args `((foo bar baz) (((foo (bar !)) baz ,#'%test-5-callback)))))
+    (funcall test (apply #'make-petri-net args))
+    (funcall test (apply #'make-threaded-petri-net args))
+    (funcall test (petri-net ()
+                    (foo (bar !) -> #'%test-5-callback -> baz)))
+    (funcall test (threaded-petri-net ()
+                    (foo (bar !) -> #'%test-5-callback -> baz)))))
+
+(define-test test-petri-net-5-inhibitor-full
+  (let ((test (make-test 'foo #(1 2 3 4 5)
+                         'baz #()
+                         :extra-input-bag 'bar
+                         :extra-input #(1)))
+        (args `((foo bar baz) (((foo (bar !)) baz ,#'%test-5-callback)))))
+    (funcall test (apply #'make-petri-net args))
+    (funcall test (apply #'make-threaded-petri-net args))
+    (funcall test (petri-net ()
+                    (foo (bar !) -> #'%test-5-callback -> baz)))
+    (funcall test (threaded-petri-net ()
+                    (foo (bar !) -> #'%test-5-callback -> baz)))))
+
 ;;; NEGATIVE TEST - MISMATCHED OUTPUT
 
 (defun %test-negative-mismatched-callback (input output)
@@ -178,6 +213,10 @@
       (funcall test
                (threaded-petri-net ()
                  (foo -> #'%test-negative-invalid-value-callback -> bar))))))
+
+;;; TODO test negative cases for wildcards and inhibitors:
+;;; * wildcards are not allowed as input to transitions
+;;; * inhibitors are not allowed as output from transitions
 
 ;;; TEST-TIME
 ;;; This verifies that the threaded net is indeed paralellizing execution.

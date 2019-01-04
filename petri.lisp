@@ -1,29 +1,24 @@
 ;;;; petri.lisp
 
 (uiop:define-package #:petri
-  (:mix #:closer-mop
-        #:cl
-        #:alexandria
-        #:split-sequence
-        #:phoe-toolbox/bag
-        #:trivial-backtrace)
+    (:mix #:closer-mop
+          #:cl
+          #:alexandria
+          #:split-sequence
+          #:phoe-toolbox/bag)
   (:reexport #:phoe-toolbox/bag)
   (:export #:transition #:bags-from #:bags-to #:callback
            #:make-transition
            ;; TODO do we need to explicitly export transitions symbols?
-           #:transition-valid-p
+           #:transition-ready-p
+           #:find-ready-transitions
            #:petri-net-error #:simple-petri-net-error
            #:transition-not-ready
            #:requested-count
            #:actual-count
            #:condition-bag
            #:petri-net #:bags #:transitions
-           #:make-petri-net
-           #:find-valid-transitions
-           ;; ASYNC
-           #:threaded-petri-net
-           #:threaded-transition
-           #:make-threaded-petri-net))
+           #:make-petri-net))
 
 (in-package #:petri)
 
@@ -78,7 +73,7 @@
 
 (defmethod make-petri-net-funcallable-function ((petri-net petri-net))
   (named-lambda execute-petri-net ()
-    (loop for transition = (find-valid-transition petri-net)
+    (loop for transition = (find-ready-transition petri-net)
           while transition do (funcall transition petri-net t))
     petri-net))
 
@@ -92,8 +87,8 @@
         (remhash name (bags petri-net)))
     new-value))
 
-(defun find-valid-transition (petri-net)
-  (find-if (rcurry #'transition-valid-p petri-net)
+(defun find-ready-transition (petri-net)
+  (find-if (rcurry #'transition-ready-p petri-net)
            (shuffle (transitions petri-net))))
 
 (defun make-petri-net (bags transitions)
@@ -151,13 +146,20 @@
               (petri-net-error "Mismatched element count for key ~S.
 Expected ~D elements but found ~D." key expected-count actual-count))))))))
 
-(defun transition-valid-p (transition petri-net &optional errorp)
+(defun transition-ready-p (transition petri-net &optional errorp)
   (let ((bags-from (bags-from transition)))
     (flet ((fn (name requested)
              (let ((actual (bag-count (bag petri-net name))))
-               (cond ((<= requested actual))
+               (cond ((and (symbolp requested)
+                           (string= '! requested)
+                           (/= 0 actual))
+                      (return-from transition-ready-p nil))
+                     ((and (symbolp requested)
+                           (string= '! requested)
+                           (= 0 actual)))
+                     ((<= requested actual))
                      (errorp (transition-not-ready name requested actual))
-                     (t (return-from transition-valid-p nil))))))
+                     (t (return-from transition-ready-p nil))))))
       (maphash #'fn bags-from)
       t)))
 
@@ -173,13 +175,15 @@ Expected ~D elements but found ~D." key expected-count actual-count))))))))
 (defmethod populate-input
     ((transition transition) (petri-net petri-net) &optional skip-validation-p)
   (unless skip-validation-p
-    (transition-valid-p transition petri-net t))
+    (transition-ready-p transition petri-net t))
   (let ((input (make-hash-table)))
     (flet ((populate-input (name count)
-             (setf (gethash name input)
-                   (uiop:while-collecting (collect)
-                     (dotimes (i count)
-                       (collect (bag-remove (bag petri-net name))))))))
+             (unless (and (symbolp count)
+                          (string= '! count))
+               (setf (gethash name input)
+                     (uiop:while-collecting (collect)
+                       (dotimes (i count)
+                         (collect (bag-remove (bag petri-net name)))))))))
       (maphash #'populate-input (bags-from transition)))
     input))
 
@@ -246,8 +250,8 @@ only ~D were available."
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun form-edges (form)
-    (flet ((test (x y) (and (symbolp x) (symbolp y) (string-equal x y))))
-      (let ((sublists (split-sequence '-> form :test #'test)))
+    (flet ((arrowp (x) (and (symbolp x) (string-equal x "->"))))
+      (let ((sublists (split-sequence-if #'arrowp form)))
         (loop for (sublist-1 sublist-2) on sublists
               while (and sublist-1 sublist-2)
               nconc (map-product #'list sublist-1 sublist-2)))))
@@ -257,8 +261,25 @@ only ~D were available."
         (and (proper-list-p thing)
              (= 2 (length thing))
              (symbolp (first thing))
-             (or (eql '* (second thing))
+             (or (and (symbolp (second thing))
+                      (string= '* (second thing)))
+                 (and (symbolp (second thing))
+                      (string= '! (second thing)))
                  (positive-integer-p (second thing))))))
+
+  (defun inhibitor-bag-form-p (thing)
+    (and (proper-list-p thing)
+         (= 2 (length thing))
+         (symbolp (first thing))
+         (symbolp (second thing))
+         (string= '! (second thing))))
+
+  (defun wildcard-bag-form-p (thing)
+    (and (proper-list-p thing)
+         (= 2 (length thing))
+         (symbolp (first thing))
+         (symbolp (second thing))
+         (string= '* (second thing))))
 
   (defun function-form-p (thing)
     (and (proper-list-p thing)
@@ -266,117 +287,55 @@ only ~D were available."
          (eql 'function (first thing))
          (symbolp (second thing))))
 
-  (flet ((%edges-objects (edges predicate)
-           (let ((hash-table (make-hash-table :test #'equal)))
-             (dolist (edge edges)
-               (cond ((funcall predicate (first edge))
-                      (setf (gethash (first edge) hash-table) t))
-                     ((funcall predicate (second edge))
-                      (setf (gethash (second edge) hash-table) t))))
-             (hash-table-keys hash-table))))
-    (defun edges-transitions (edges)
-      (%edges-objects edges #'function-form-p))
-    (defun edges-bags (edges)
-      (%edges-objects edges #'bag-form-p)))
+  (defun edges-objects (edges)
+    (let ((transitions (make-hash-table))
+          (bags (make-hash-table)))
+      (dolist (edge edges)
+        (destructuring-bind (first second) edge
+          (cond ((wildcard-bag-form-p first)
+                 (petri-net-error "Wildcard bag ~S is not allowed as input."
+                                  first))
+                ((inhibitor-bag-form-p second)
+                 (petri-net-error "Inhibitor bag ~S is not allowed as output."
+                                  second))
+                ((and (function-form-p first)
+                      (bag-form-p second))
+                 (setf (gethash first transitions) t
+                       (gethash (ensure-car second) bags) t))
+                ((and (bag-form-p first)
+                      (function-form-p second))
+                 (setf (gethash (ensure-car first) bags) t
+                       (gethash second transitions) t))
+                (t
+                 (petri-net-error "Malformed Petri net edge from ~S to ~S."
+                                  first second)))))
+      (values (hash-table-keys transitions)
+              (hash-table-keys bags))))
 
   (flet ((%edges-bags (edges function-form key-fn value-fn)
            (flet ((fn (x) (equal (funcall value-fn x) function-form)))
-             (mapcar key-fn (remove-if-not #'fn edges)))))
+             (remove-duplicates (mapcar key-fn (remove-if-not #'fn edges))
+                                :test #'equal))))
     (defun edges-bags-from (edges function-form)
       (%edges-bags edges function-form #'first #'second))
     (defun edges-bags-to (edges function-form)
       (%edges-bags edges function-form #'second #'first))))
 
 (defmacro petri-net ((&optional (constructor '#'make-petri-net)) &body forms)
-  (let* ((edges (mapcan #'form-edges forms))
-         (transitions (edges-transitions edges))
-         (bags (edges-bags edges)))
-    (flet ((make-transition-form (x)
-             `(list ',(edges-bags-from edges x)
-                    ',(edges-bags-to edges x)
-                    ,x)))
-      `(funcall ,constructor
-                ',bags
-                (list ,@(mapcar #'make-transition-form transitions))))))
+  (let ((edges (mapcan #'form-edges forms)))
+    (multiple-value-bind (transitions bags) (edges-objects edges)
+      (flet ((make-transition-form (x)
+               `(list ',(edges-bags-from edges x)
+                      ',(edges-bags-to edges x)
+                      ,x)))
+        `(funcall ,constructor
+                  ',bags
+                  (list ,@(remove-duplicates
+                           (mapcar #'make-transition-form transitions)
+                           :test #'equal)))))))
 
-;;; THREADED
-
-(defclass threaded-petri-net (petri-net)
-  ((%lock :reader lock
-          :initform (bt:make-lock))
-   (%thread-queue :reader thread-queue
-                  :initform (lparallel.queue:make-queue)))
-  (:metaclass closer-mop:funcallable-standard-class))
-
-(defmethod petri-net-transition-constructor ((petri-net threaded-petri-net))
-  #'make-threaded-transition)
-
-(defmethod make-petri-net-funcallable-function ((petri-net threaded-petri-net))
-  (named-lambda execute-threaded-petri-net ()
-    (bt:with-lock-held ((lock petri-net))
-      (spawn-transitions petri-net))
-    (join-all-threads petri-net)))
-
-(defun spawn-transitions (petri-net)
-  (flet ((spawn ()
-           (when-let ((transition (find-valid-transition petri-net)))
-             (let ((input (populate-input transition petri-net t)))
-               (bt:make-thread (curry transition input petri-net))))))
-    (loop with queue = (thread-queue petri-net)
-          for thread = (spawn)
-          while thread do (lparallel.queue:push-queue thread queue))))
-
-(defun join-all-threads (petri-net)
-  (loop with queue = (thread-queue petri-net)
-        for thread = (lparallel.queue:try-pop-queue queue)
-        while thread
-        do (multiple-value-bind (condition backtrace) (bt:join-thread thread)
-             (when (typep condition 'condition)
-               (threaded-petri-net-error condition backtrace)))))
-
-(defclass threaded-transition (transition) ()
-  (:metaclass closer-mop:funcallable-standard-class))
-
-(defmethod make-transition-funcallable-function ((transition threaded-transition))
-  (named-lambda execute-threaded-transition (input petri-net)
-    (handler-bind ((error (lambda (e)
-                            (return-from execute-threaded-transition
-                              (values e (print-backtrace e :output nil))))))
-      (let ((output (make-hash-table)))
-        (call-callback transition input output)
-        (bt:with-lock-held ((lock petri-net))
-          (populate-output transition petri-net output)
-          (spawn-transitions petri-net))
-        (values nil nil)))))
-
-(defun make-threaded-transition (from to callback)
-  (make-transition from to callback 'threaded-transition))
-
-(defun make-threaded-petri-net (bags transitions)
-  (make-instance 'threaded-petri-net :bags bags :transitions transitions))
-
-(defmacro threaded-petri-net
-    ((&optional (constructor '#'make-threaded-petri-net)) &body forms)
-  `(petri-net (,constructor) ,@forms))
-
-(define-condition threaded-petri-net-error (petri-net-error)
-  ((%reason :reader reason
-            :initarg :reason
-            :initform (required-argument :reason))
-   (%backtrace :reader backtrace
-               :initarg :backtrace
-               :initform nil))
-  (:report (lambda (condition stream)
-             (format stream "Error while executing the threaded Petri net:~%~A"
-                     (reason condition)))))
-
-(defun threaded-petri-net-error (reason backtrace)
-  (error 'threaded-petri-net-error :reason reason :backtrace backtrace))
-
-;; TODO split threaded from nonthreaded
 ;; TODO graphs
 ;; TODO validation in macro declaration
-;; TODO inhibitors
 
 ;; (petri-net ()
 ;;   (credentials -> #'login -> cookie-jars

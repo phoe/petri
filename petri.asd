@@ -10,12 +10,20 @@
                #:closer-mop
                #:1am
                #:split-sequence
-               #:phoe-toolbox/bag
-               ;; ASYNC
+               #:phoe-toolbox/bag)
+  :components ((:file "petri")))
+
+(asdf:defsystem #:petri/threaded
+  :description "An implementation of Petri nets - multithreaded version"
+  :author "Michał \"phoe\" Herda <phoe@disroot.org>"
+  :license  "MIT"
+  :version "0.0.1"
+  :serial t
+  :depends-on (#:petri
                #:bordeaux-threads
                #:lparallel
                #:trivial-backtrace)
-  :components ((:file "petri")))
+  :components ((:file "threaded")))
 
 (asdf:defsystem #:petri/test
   :description "Tests for PETRI-NET"
@@ -25,7 +33,8 @@
   :serial t
   :depends-on (#:alexandria
                #:1am
-               #:petri)
+               #:petri
+               #:petri/threaded)
   :components ((:file "test")))
 
 (defmethod asdf:perform ((o asdf:test-op)
