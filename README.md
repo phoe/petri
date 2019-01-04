@@ -54,6 +54,8 @@ table and an output hash table. The input hash table provides input for the
 callback and the output hash table is used for sending output. The return value
 of the callback is ignored.
 
+The input hash table is fresh may freely be mutated by the callback.
+
 `PETRI` pre-creates the keys in output hash table, so the callback is allowed to
 access the keys of that hash table in order to determine how to behave.
 
@@ -120,12 +122,77 @@ declarative syntax, and using single-threaded and multithreaded implementations.
 
 ## Examples
 
+### Negation
 
-----
+```common-lisp
+;; Define the callback function for the transition.
+(flet ((callback (input output)
+         (push (- (pop (gethash 'foo input))) (gethash 'bar output))))
+  ;; Create the petri net object.
+  (let ((petri-net (make-petri-net
+                    ;; Define bags FOO and BAR.
+                    '(foo bar)
+                    ;; Define a single transition which takes one token from FOO
+                    ;; and outputs one token to BAR.
+                    `((((foo 1)) ((bar 1)) ,#'callback)))))
+    ;; Populate bag FOO with data.
+    (dolist (i '(1 2 3))
+      (bag-insert (bag-of petri-net 'foo) i))
+    ;; Funcall the Petri net.
+    (funcall petri-net)
+    ;; Access the contents of bag BAR.
+    (bag-contents (bag-of petri-net 'bar))))
+;; => #(-1 -3 -2)
+```
+
+![Generated negation graph](example-negation.png)
+
+Due to the non-determinism of the Petri net, the output vector may have its
+elements in any order. 
+
+### Maybe-negation
+
+```common-lisp 
+;; Define the callback functions for the transition: one which negates its
+;; arguments and the other which passes them without any change.
+(flet ((callback-negation (input output)
+         (push (- (pop (gethash 'foo input))) (gethash 'bar output)))
+       (callback-identity (input output)
+         (push (pop (gethash 'foo input)) (gethash 'bar output))))
+  ;; Create the petri net object.
+  (let ((petri-net (make-petri-net
+                    ;; Define bags FOO and BAR.
+                    '(foo bar)
+                    ;; Define two transitions:
+                    ;; * one that takes one token from FOO, outputs one token to
+                    ;;   BAR, and calls CALLBACK-IDENTITY,
+                    ;; * one that takes one token from FOO, outputs one token to
+                    ;;   BAR, and calls CALLBACK-NEGATION.
+                    `((((foo 1)) ((bar 1)) ,#'callback-negation)
+                      (((foo 1)) ((bar 1)) ,#'callback-identity)))))
+    ;; Populate bag FOO with data.
+    (dolist (i '(1 2 3 4 5 6 7 8 9 0))
+      (bag-insert (bag-of petri-net 'foo) i))
+    ;; Funcall the Petri net.
+    (funcall petri-net)
+    ;; Access the contents of bag BAR.
+    (bag-contents (bag-of petri-net 'bar))))
+;; => #(-1 -9 -3 8 -4 5 0 6 -2 -7)
+;; => #(-5 8 0 2 -4 -9 -3 -1 -7 -6)
+;; => #(-4 -8 -1 -2 -5 -7 -6 3 0 9)
+;; => ...
+```
+
+![Generated maybe-negation graph](example-maybe-negation.png)
+
+Due to the non-determinism of the Petri net, the output vector may have its
+elements in any order, and any element might have been negated.
+
+### Graphs
 
 A more complex Petri net may be visualized using the `PETRI/GRAPH` system.
 
-```
+```common-lisp
 (petri/graph:display-graph
  (petri-net ()
    (credentials -> #'login -> cookie-jars
@@ -142,7 +209,7 @@ A more complex Petri net may be visualized using the `PETRI/GRAPH` system.
    (furres-for-specitags -> #'dl-specitags -> specitags)))
 ```
 
-![Generated graph](graph-example.png)
+![Generated complex graph](example-complex.png)
 
 In the above example, the programmer's intent was to store input in the
 `CREDENTIALS` bag read and output from bags `ACCOUNTS`, `IMAGES`, `FURRES`,

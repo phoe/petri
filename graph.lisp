@@ -9,7 +9,7 @@
 (in-package #:petri/graph)
 
 (defmethod cl-dot:generate-graph ((petri-net petri-net) &optional attributes)
-  (cl-dot:generate-graph-from-roots 'petri-net (transitions petri-net)
+  (cl-dot:generate-graph-from-roots 'petri-net (petri::transitions petri-net)
                                     attributes))
 
 (defun make-object-from-bag (key count)
@@ -33,7 +33,7 @@
 (defmethod cl-dot:graph-object-pointed-to-by
     ((graph (eql 'petri-net)) (transition petri::transition))
   (uiop:while-collecting (collect)
-    (let ((bags-from (bags-from transition)))
+    (let ((bags-from (petri::bags-from transition)))
       (dolist (key (hash-table-keys bags-from))
         (let ((count (gethash key bags-from)))
           (collect (make-object-from-bag key count)))))))
@@ -41,14 +41,14 @@
 (defmethod cl-dot:graph-object-points-to
     ((graph (eql 'petri-net)) (transition petri::transition))
   (uiop:while-collecting (collect)
-    (let ((bags-to (bags-to transition)))
+    (let ((bags-to (petri::bags-to transition)))
       (dolist (key (hash-table-keys bags-to))
         (let ((count (gethash key bags-to)))
           (collect (make-object-from-bag key count)))))))
 
 (defmethod cl-dot:graph-object-node
     ((graph (eql 'petri-net)) (transition petri::transition))
-  (let* ((callback (callback transition))
+  (let* ((callback (petri::callback transition))
          (name (princ-to-string
                 (or (nth-value 2 (function-lambda-expression callback))
                     callback))))
