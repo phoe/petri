@@ -80,22 +80,3 @@
   (let ((pathname (generate-graph-to-file petri-net)))
     #+windows (error "Not implemented")
     #-windows (uiop:run-program (list "xdg-open" (namestring pathname)))))
-
-;; (dolist (name '(login dl-account dl-images dl-furres
-;;                 dl-costumes dl-portraits dl-specitags))
-;;   (eval `(defun ,name ())))
-
-;; (petri::display-graph
-;;  (petri-net ()
-;;    (credentials -> #'login -> cookie-jars
-;;                 -> #'dl-account
-;;                 -> accounts accounts-images accounts-furres)
-;;    (accounts-images -> #'dl-images -> (images *))
-;;    (accounts-furres -> #'dl-furres
-;;                     -> (furres *)
-;;                     (furres-costumes *)
-;;                     (furres-portraits *)
-;;                     (furres-specitags *))
-;;    (furres-costumes -> #'dl-costumes -> costumes)
-;;    (furres-portraits -> #'dl-portraits -> portraits)
-;;    (furres-specitags -> #'dl-specitags -> specitags)))
