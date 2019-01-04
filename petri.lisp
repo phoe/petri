@@ -250,8 +250,14 @@ only ~D were available."
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun form-edges (form)
+    (unless (proper-list-p form)
+      (petri-net-error "Malformed form: ~S" form))
     (flet ((arrowp (x) (and (symbolp x) (string-equal x "->"))))
       (let ((sublists (split-sequence-if #'arrowp form)))
+        (cond ((= 0 (length sublists))
+               (petri-net-error "Empty edge in macro form."))
+              ((= 1 (length sublists))
+               (petri-net-error "Malformed edge: ~S" (first sublists))))
         (loop for (sublist-1 sublist-2) on sublists
               while (and sublist-1 sublist-2)
               nconc (map-product #'list sublist-1 sublist-2)))))
@@ -335,7 +341,6 @@ only ~D were available."
                            :test #'equal)))))))
 
 ;; TODO graphs
-;; TODO validation in macro declaration
 
 ;; (petri-net ()
 ;;   (credentials -> #'login -> cookie-jars

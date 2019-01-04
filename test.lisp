@@ -214,9 +214,27 @@
                (threaded-petri-net ()
                  (foo -> #'%test-negative-invalid-value-callback -> bar))))))
 
-;;; TODO test negative cases for wildcards and inhibitors:
-;;; * wildcards are not allowed as input to transitions
-;;; * inhibitors are not allowed as output from transitions
+;;; NEGATIVE TEST - INVALID MACRO FORMS
+
+(defun %test-invalid-form (data)
+  (signals petri-net-error (macroexpand-1 `(petri-net () ,data))))
+
+(define-test test-negative-invalid-macro-form
+  (%test-invalid-form '(42))
+  (%test-invalid-form '((foo bar baz)))
+  (%test-invalid-form '((#'foo #'bar #'baz)))
+  (%test-invalid-form '((foo -> bar)))
+  (%test-invalid-form '((#'foo -> #'bar)))
+  (%test-invalid-form '((42 -> foo)))
+  (%test-invalid-form '((42 -> #'foo)))
+  (%test-invalid-form '((foo -> 42)))
+  (%test-invalid-form '((#'foo -> 42))))
+
+(define-test test-negative-invalid-wildcard-form
+  (%test-invalid-form '(((foo *) -> #'bar))))
+
+(define-test test-negative-invalid-inhibitor-form
+  (%test-invalid-form '((#'foo -> (bar !)))))
 
 ;;; TEST-TIME
 ;;; This verifies that the threaded net is indeed paralellizing execution.

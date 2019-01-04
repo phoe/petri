@@ -26,10 +26,12 @@
                   :initform (lparallel.queue:make-queue)))
   (:metaclass closer-mop:funcallable-standard-class))
 
-(defmethod petri-net-transition-constructor ((petri-net threaded-petri-net))
+(defmethod petri::petri-net-transition-constructor
+    ((petri-net threaded-petri-net))
   #'make-threaded-transition)
 
-(defmethod make-petri-net-funcallable-function ((petri-net threaded-petri-net))
+(defmethod petri::make-petri-net-funcallable-function
+    ((petri-net threaded-petri-net))
   (named-lambda execute-threaded-petri-net ()
     (bt:with-lock-held ((lock petri-net))
       (spawn-transitions petri-net))
@@ -55,7 +57,7 @@
 (defclass threaded-transition (transition) ()
   (:metaclass closer-mop:funcallable-standard-class))
 
-(defmethod make-transition-funcallable-function
+(defmethod petri::make-transition-funcallable-function
     ((transition threaded-transition))
   (named-lambda execute-threaded-transition (input petri-net)
     (handler-bind ((error (lambda (e)
