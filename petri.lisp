@@ -109,7 +109,7 @@
    (%callback :accessor callback
               :initarg :callback))
   (:default-initargs :bags-from (make-hash-table)
-                     :bags-to '()
+                     :bags-to (make-hash-table)
                      :callback (required-argument :callback))
   (:metaclass closer-mop:funcallable-standard-class))
 
@@ -120,7 +120,7 @@
   (print-unreadable-object (transition stream :type t)
     (format stream "(~S -> ~S)"
             (no-one-element-lists (hash-table-keys (bags-from transition)))
-            (no-one-element-lists (bags-to transition)))))
+            (no-one-element-lists (hash-table-keys (bags-to transition))))))
 
 (defmethod initialize-instance :after ((transition transition) &key)
   (set-funcallable-instance-function
@@ -137,11 +137,19 @@
         (unless (proper-list-p value)
           (petri-net-error "Value ~S in the output table is not a proper list."
                            value)))))
-  (let ((expected (bags-to transition))
-        (actual (hash-table-keys output)))
+  (let* ((bags-to (bags-to transition))
+         (expected (hash-table-keys bags-to))
+         (actual (hash-table-keys output)))
     (unless (alexandria:set-equal expected actual)
       (petri-net-error "Mismatched keys in output table.~%Expected:~S~%Found:~S"
-                       expected actual))))
+                       expected actual))
+    (dolist (key expected)
+      (let ((expected-count (gethash key bags-to)))
+        (unless (eq expected-count '*)
+          (let ((actual-count (length (gethash key output))))
+            (unless (= expected-count actual-count)
+              (petri-net-error "Mismatched element count for key ~S.
+Expected ~D elements but found ~D." key expected-count actual-count))))))))
 
 (defun transition-valid-p (transition petri-net &optional errorp)
   (let ((bags-from (bags-from transition)))
@@ -182,7 +190,7 @@
 (defmethod populate-output
     ((transition transition) (petri-net petri-net) (output hash-table))
   (validate-output-hash-table output transition)
-  (dolist (name (bags-to transition))
+  (dolist (name (hash-table-keys (bags-to transition)))
     (dolist (token (gethash name output))
       (bag-insert (bag petri-net name) token))))
 
@@ -196,7 +204,7 @@
                    (collect (cons (first thing) (second thing)))
                    (collect (cons thing 1)))))))
     (make-instance class :bags-from (alist-hash-table (listify from))
-                         :bags-to to
+                         :bags-to (alist-hash-table (listify to))
                          :callback callback)))
 
 ;;; CONDITIONS
@@ -249,7 +257,8 @@ only ~D were available."
         (and (proper-list-p thing)
              (= 2 (length thing))
              (symbolp (first thing))
-             (positive-integer-p (second thing)))))
+             (or (eql '* (second thing))
+                 (positive-integer-p (second thing))))))
 
   (defun function-form-p (thing)
     (and (proper-list-p thing)
@@ -368,8 +377,6 @@ only ~D were available."
 ;; TODO graphs
 ;; TODO validation in macro declaration
 ;; TODO inhibitors
-;; TODO declare (foo -> #'bar -> (baz 3)) to mark that exactly three tokens
-;; are supposed to be output from #'bar - validate it
 
 ;; (petri-net ()
 ;;   (credentials -> #'login -> cookie-jars

@@ -57,15 +57,15 @@
                          'quux #(-3 -2 -1 1 2 3)))
         (args `((foo bar baz quux)
                 ((foo (bar baz) ,#'%test-2-callback-1)
-                 ((bar baz) quux ,#'%test-2-callback-2)))))
+                 ((bar baz) ((quux 2)) ,#'%test-2-callback-2)))))
     (funcall test (apply #'make-petri-net args))
     (funcall test (apply #'make-threaded-petri-net args))
     (funcall test (petri-net ()
                     (foo -> #'%test-2-callback-1 -> bar baz
-                         -> #'%test-2-callback-2 -> quux)))
+                         -> #'%test-2-callback-2 -> (quux 2))))
     (funcall test (threaded-petri-net ()
                     (foo -> #'%test-2-callback-1 -> bar baz
-                         -> #'%test-2-callback-2 -> quux)))))
+                         -> #'%test-2-callback-2 -> (quux 2))))))
 
 ;;; TEST 3
 
@@ -94,13 +94,24 @@
 (define-test test-petri-net-4
   (let ((test (make-test 'foo #(3 3 3)
                          'bar #(1 1 1 1 1 1 1 1 1)))
-        (args `((foo bar) ((foo bar ,#'%test-4-callback)))))
+        (args `((foo bar) ((foo ((bar 3)) ,#'%test-4-callback)))))
     (funcall test (apply #'make-petri-net args))
     (funcall test (apply #'make-threaded-petri-net args))
     (funcall test (petri-net ()
-                    ((foo 3) -> #'%test-4-callback -> bar)))
+                    (foo -> #'%test-4-callback -> (bar 3))))
     (funcall test (threaded-petri-net ()
-                    ((foo 3) -> #'%test-4-callback -> bar)))))
+                    (foo -> #'%test-4-callback -> (bar 3))))))
+
+(define-test test-petri-net-4-wildcard
+  (let ((test (make-test 'foo #(3 3 3)
+                         'bar #(1 1 1 1 1 1 1 1 1)))
+        (args `((foo bar) ((foo ((bar *)) ,#'%test-4-callback)))))
+    (funcall test (apply #'make-petri-net args))
+    (funcall test (apply #'make-threaded-petri-net args))
+    (funcall test (petri-net ()
+                    (foo -> #'%test-4-callback -> (bar *))))
+    (funcall test (threaded-petri-net ()
+                    (foo -> #'%test-4-callback -> (bar *))))))
 
 ;;; NEGATIVE TEST - MISMATCHED OUTPUT
 
