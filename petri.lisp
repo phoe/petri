@@ -292,7 +292,12 @@ only ~D were available."
   (defun function-form-p (thing)
     (and (proper-list-p thing)
          (= 2 (length thing))
-         (eql 'function (first thing))
+         ;; We do not use (EQL 'FUNCTION (FIRST THING)) to take modified
+         ;; readtables into account - for example, readtable :QTOOLS uses
+         ;; its own custom version of the #' reader macro that evaluates to
+         ;; (CL+QT:FUNCTION thing).
+         (symbolp (first thing))
+         (string= 'function (first thing))
          (symbolp (second thing))))
 
   (defun edges-objects (edges)
