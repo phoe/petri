@@ -3,6 +3,10 @@
 A Common Lisp implementation of 
 [Petri nets](https://en.wikipedia.org/wiki/Petri_net).
 
+## Warning
+
+This README is beta-quality. It will be fixed and extended one day.
+
 ## Introduction
 
 The original Petri net notation mentions transitions and places. Because the
