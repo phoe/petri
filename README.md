@@ -61,7 +61,9 @@ of the callback is ignored.
 The input hash table is fresh may freely be mutated by the callback.
 
 `PETRI` pre-creates the keys in output hash table, so the callback is allowed to
-access the keys of that hash table in order to determine how to behave.
+access the keys of that hash table in order to determine how to behave. In
+particular, the callback is allowed to do nothing in order to be considered
+valid.
 
 `PETRI` solves the nondeterminism of Petri nets by means of random selection.
 Each time the code searches for an available transition, all transitions are
