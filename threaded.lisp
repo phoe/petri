@@ -90,8 +90,9 @@
                :initarg :backtrace
                :initform nil))
   (:report (lambda (condition stream)
-             (format stream "Error while executing the threaded Petri net:~%~A"
-                     (reason condition)))))
+             (format stream "Error while executing the threaded Petri net:~%~A
+Backtrace: ~A"
+                     (reason condition) (backtrace condition)))))
 
 (defun threaded-petri-net-error (reason backtrace)
   (cerror "Continue executing the Petri net." 'threaded-petri-net-error
