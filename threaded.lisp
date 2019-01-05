@@ -49,7 +49,7 @@
           for thread = (spawn)
           while thread do (lparallel.queue:push-queue thread queue))))
 
-(defun join-all-threads (petri-net)
+(defun join-all-threads (petri-net) ;; TODO add ignore-errors
   (loop with queue = (thread-queue petri-net)
         for thread = (lparallel.queue:try-pop-queue queue)
         while thread
@@ -66,7 +66,7 @@
     (handler-bind ((error (lambda (e)
                             (return-from execute-threaded-transition
                               (values e (print-backtrace e :output nil))))))
-      (let ((output (make-hash-table)))
+      (let ((output (petri::make-output-hash-table transition)))
         (petri::call-callback transition input output)
         (bt:with-lock-held ((lock-of petri-net))
           (petri::populate-output transition petri-net output)

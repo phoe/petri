@@ -168,9 +168,15 @@ Expected ~D elements but found ~D." key expected-count actual-count))))))))
 (defmethod make-transition-funcallable-function ((transition transition))
   (named-lambda execute-transition (petri-net &optional skip-validation-p)
     (let* ((input (populate-input transition petri-net skip-validation-p))
-           (output (make-hash-table)))
+           (output (make-output-hash-table transition)))
       (call-callback transition input output)
       (populate-output transition petri-net output))))
+
+(defun make-output-hash-table (transition)
+  (let ((hash-table (make-hash-table)))
+    (dolist (symbol (hash-table-keys (bags-to transition)))
+      (setf (gethash symbol hash-table) nil))
+    hash-table))
 
 (defmethod populate-input
     ((transition transition) (petri-net petri-net) &optional skip-validation-p)
