@@ -34,10 +34,10 @@
   (named-lambda execute-threaded-petri-net (&optional (compress t))
     (bt:with-lock-held ((lock-of petri-net))
       (spawn-transitions petri-net))
+    (join-all-threads petri-net)
     (when compress
       (dolist (bag (hash-table-values (petri::bags petri-net)))
         (bag-compress bag)))
-    (join-all-threads petri-net)
     petri-net))
 
 (defun spawn-transitions (petri-net)
