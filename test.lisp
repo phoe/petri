@@ -22,13 +22,13 @@
      (pushnew ',name *petri-tests*)))
 
 (defun make-test (input-bag input output-bag output
-                  &key extra-input-bag extra-input)
+                  &key extra-input-bag extra-input ignore-errors)
   (lambda (petri-net)
     (map nil (curry #'bag-insert (bag-of petri-net input-bag)) input)
     (when extra-input
       (map nil (curry #'bag-insert (bag-of petri-net extra-input-bag))
            extra-input))
-    (is (eq petri-net (funcall petri-net)))
+    (is (eq petri-net (funcall petri-net :ignore-errors ignore-errors)))
     (let ((contents (bag-contents (bag-of petri-net output-bag))))
       (is (set-equal (coerce output 'list) (coerce contents 'list))))))
 
@@ -146,6 +146,24 @@
                     (foo (bar !) -> #'%test-5-callback -> baz)))
     (funcall test (threaded-petri-net ()
                     (foo (bar !) -> #'%test-5-callback -> baz)))))
+
+;;; NEGATIVE TEST - IGNORE ERRORS
+
+(defun %test-negative-ignore-errors (input output)
+  (declare (ignore input output))
+  (error "foo"))
+
+(define-test test-negative-ignore-errors
+  (let ((test (make-test 'foo #(42)
+                         'bar #()
+                         :ignore-errors t))
+        (args `((foo bar) ((foo bar ,#'%test-negative-ignore-errors)))))
+    (funcall test (apply #'make-petri-net args))
+    (funcall test (apply #'make-threaded-petri-net args))
+    (funcall test (petri-net ()
+                    (foo bar -> #'%test-negative-ignore-errors -> baz)))
+    (funcall test (threaded-petri-net ()
+                    (foo bar -> #'%test-negative-ignore-errors -> baz)))))
 
 ;;; NEGATIVE TEST - MISMATCHED OUTPUT
 

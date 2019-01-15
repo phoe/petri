@@ -66,9 +66,13 @@
   #'make-transition)
 
 (defmethod make-petri-net-funcallable-function ((petri-net petri-net))
-  (named-lambda execute-petri-net (&optional (compress t))
-    (loop for transition = (find-ready-transition petri-net)
-          while transition do (funcall transition petri-net t))
+  (named-lambda execute-petri-net (&key (compress t) ignore-errors)
+    (do ((transition (find-ready-transition petri-net)
+                     (find-ready-transition petri-net)))
+        ((null transition))
+      (if ignore-errors
+          (ignore-errors (funcall transition petri-net t))
+          (funcall transition petri-net t)))
     (when compress
       (dolist (bag (hash-table-values (bags petri-net)))
         (bag-compress bag)))

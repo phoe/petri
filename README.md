@@ -1,6 +1,6 @@
 # PETRI
 
-A Common Lisp implementation of 
+A Common Lisp implementation of
 [Petri nets](https://en.wikipedia.org/wiki/Petri_net).
 
 ## Warning
@@ -19,8 +19,12 @@ queried using the interface defined in that system: `BAG-CONTENTS`,
 Each Petri net is a funcallable object and invoking a Petri net happens via
 funcalling it. A Petri net returns itself upon being funcalled.
 
-The only argument to a Petri net is an optional optimization argument stating
-whether the bags should be compressed after each Petri net call. This argument 
+The keyword arguments to a Petri net are:
+* `:COMPRESS` - states whether the bags should be compressed after each Petri
+net call;
+* `:IGNORE-ERRORS` - states whether all errors should be silently ignored during
+Petri net execution. This option is useful if error handling happens inside
+transition functions via programmer code.
 
 Petri nets are immutable after their creation. Their only mutable parts are the
 bag objects referenced by them.
@@ -46,12 +50,12 @@ execution-time error is signaled.
 A special kind of an input bag spec is a list in form of `(symbol !)`, where `!`
 is any symbol with name `"!"`. This spec denotes an inhibitor edge, meaning that
 the bag with the name `symbol` must be empty in order for the transition to
-fire. 
+fire.
 
 A special kind of an output bag spec is a list in form of `(symbol *)`, where
 `*` is any symbol with name `"*"`. This spec denotes a wildcard edge, meaning
 that the transition may push any amount of tokens to the bag with the name
-`symbol`. 
+`symbol`.
 
 Each callback is a function that must accept a pair of arguments: an input hash
 table and an output hash table. The input hash table provides input for the
@@ -101,14 +105,14 @@ be created using the `THREADED-PETRI-NET` macro or the `MAKE-THREADED-PETRI-NET`
 function.
 
 Errors cause the transition to return and are propagated to the thread calling
-the Petri net along with the backtrace, wrapped in a condition of type 
+the Petri net along with the backtrace, wrapped in a condition of type
 `THREADED-PETRI-NET-ERROR`.
 
 ### PETRI/GRAPH
 
-This ASDF system contains code for integrating `PETRI` with `CL-DOT`. 
+This ASDF system contains code for integrating `PETRI` with `CL-DOT`.
 
-Loading this system defines methods on the generic functions in `CL-DOT`'s 
+Loading this system defines methods on the generic functions in `CL-DOT`'s
 `GRAPH-OBJECT` protocol that allow Petri nets to be graphed.
 
 The only symbol exported by this package is `DISPLAY-GRAPH`, a convenience
@@ -119,7 +123,7 @@ directory and automatically executes it using `xdg-open`.
 
 This ASDF system contains tests for `PETRI` and `PETRI-THREADED`.
 
-You do not need to explicitly load this system to run the tests; instead, use 
+You do not need to explicitly load this system to run the tests; instead, use
 `(asdf:test-system :petri)`.
 
 See the file [tests.lisp](tests.lisp) for working examples in form of unit
@@ -154,11 +158,11 @@ declarative syntax, and using single-threaded and multithreaded implementations.
 ![Generated negation graph](example-negation.png)
 
 Due to the non-determinism of the Petri net, the output vector may have its
-elements in any order. 
+elements in any order.
 
 ### Maybe-negation
 
-```common-lisp 
+```common-lisp
 ;; Define the callback functions for the transition: one which negates its
 ;; arguments and the other which passes them without any change.
 (flet ((callback-negation (input output)

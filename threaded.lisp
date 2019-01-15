@@ -31,10 +31,11 @@
 
 (defmethod petri::make-petri-net-funcallable-function
     ((petri-net threaded-petri-net))
-  (named-lambda execute-threaded-petri-net (&optional (compress t))
+  (named-lambda execute-threaded-petri-net
+      (&optional (compress t) ignore-errors)
     (bt:with-lock-held ((lock-of petri-net))
       (spawn-transitions petri-net))
-    (join-all-threads petri-net)
+    (join-all-threads petri-net ignore-errors)
     (when compress
       (dolist (bag (hash-table-values (petri::bags petri-net)))
         (bag-compress bag)))
@@ -49,12 +50,12 @@
           for thread = (spawn)
           while thread do (lparallel.queue:push-queue thread queue))))
 
-(defun join-all-threads (petri-net) ;; TODO add ignore-errors
+(defun join-all-threads (petri-net ignore-errors)
   (loop with queue = (thread-queue petri-net)
         for thread = (lparallel.queue:try-pop-queue queue)
         while thread
         do (multiple-value-bind (condition backtrace) (bt:join-thread thread)
-             (when (typep condition 'condition)
+             (when (and (typep condition 'condition) (not ignore-errors))
                (threaded-petri-net-error condition backtrace)))))
 
 (defclass threaded-transition (petri::transition) ()
