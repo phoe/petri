@@ -60,18 +60,30 @@
 (defclass threaded-transition (petri::transition) ()
   (:metaclass closer-mop:funcallable-standard-class))
 
+(defmacro with-threaded-petri-net-handler ((condition backtrace) &body body)
+  (with-gensyms (e)
+    `(block nil
+       (handler-bind
+           ((error (lambda (,e)
+                     (setf ,condition ,e
+                           ,backtrace (print-backtrace ,e :output nil))
+                     (return))))
+         ,@body))))
+
 (defmethod petri::make-transition-funcallable-function
     ((transition threaded-transition))
   (named-lambda execute-threaded-transition (input petri-net)
-    (handler-bind ((error (lambda (e)
-                            (return-from execute-threaded-transition
-                              (values e (print-backtrace e :output nil))))))
-      (let ((output (petri::make-output-hash-table transition)))
-        (petri::call-callback transition input output)
-        (bt:with-lock-held ((lock-of petri-net))
-          (petri::populate-output transition petri-net output)
-          (spawn-transitions petri-net))
-        (values nil nil)))))
+    (let (condition
+          backtrace
+          (output (petri::make-output-hash-table transition)))
+      (with-threaded-petri-net-handler (condition backtrace)
+        (petri::call-callback transition input output))
+      (unless condition
+        (with-threaded-petri-net-handler (condition backtrace)
+          (bt:with-lock-held ((lock-of petri-net))
+            (petri::populate-output transition petri-net output)
+            (spawn-transitions petri-net))))
+      (values condition backtrace))))
 
 (defun make-threaded-transition (from to callback)
   (petri::make-transition from to callback 'threaded-transition))
