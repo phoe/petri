@@ -17,7 +17,7 @@ queried using the interface defined in that system: `BAG-CONTENTS`,
 `BAG-INSERT`, `BAG-REMOVE`, and `BAG-COUNT`.
 
 Each Petri net is a funcallable object and invoking a Petri net happens via
-funcalling it. A Petri net returns itself upon being funcalled.
+funcalling it.
 
 The keyword arguments to a Petri net are:
 * `:COMPRESS` - states whether the bags should be compressed after each Petri
@@ -25,6 +25,11 @@ net call;
 * `:IGNORE-ERRORS` - states whether all errors should be silently ignored during
 Petri net execution. This option is useful if error handling happens inside
 transition functions via programmer code.
+
+A Petri net returns two values upon being funcalled: the primary return value is
+itself, and the secondary value is a boolean stating whether any errors have
+occurred during the execution of the Petri net. (This value is only useful if
+`:IGNORE-ERRORS` has been set.)
 
 Petri nets are immutable after their creation. Their only mutable parts are the
 bag objects referenced by them.

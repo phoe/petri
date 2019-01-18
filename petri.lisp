@@ -67,16 +67,19 @@
 
 (defmethod make-petri-net-funcallable-function ((petri-net petri-net))
   (named-lambda execute-petri-net (&key (compress t) ignore-errors)
-    (do ((transition (find-ready-transition petri-net)
-                     (find-ready-transition petri-net)))
-        ((null transition))
-      (if ignore-errors
-          (ignore-errors (funcall transition petri-net t))
-          (funcall transition petri-net t)))
-    (when compress
-      (dolist (bag (hash-table-values (bags petri-net)))
-        (bag-compress bag)))
-    petri-net))
+    (let ((errorp nil))
+      (do ((transition (find-ready-transition petri-net)
+                       (find-ready-transition petri-net)))
+          ((null transition))
+        (cond (ignore-errors
+               (handler-case (funcall transition petri-net t)
+                 (error () (setf errorp t))))
+              (t
+               (funcall transition petri-net t))))
+      (when compress
+        (dolist (bag (hash-table-values (bags petri-net)))
+          (bag-compress bag)))
+      (values petri-net errorp))))
 
 (defun bag-of (petri-net name)
   (gethash name (bags petri-net)))
