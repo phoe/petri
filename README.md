@@ -208,20 +208,23 @@ elements in any order, and any element might have been negated.
 A more complex Petri net may be visualized using the `PETRI/GRAPH` system.
 
 ```common-lisp
-(petri/graph:display-graph
- (petri-net ()
-   (credentials -> #'login -> cookie-jars
-                -> #'dl-account
-                -> accounts accounts-images accounts-furres)
-   (accounts-images -> #'dl-images -> (images *))
-   (accounts-furres -> #'dl-furres
-                    -> (furres *)
-                       (furres-for-costumes *)
-                       (furres-for-portraits *)
-                       (furres-for-specitags *))
-   (furres-for-costumes -> #'dl-costumes -> costumes)
-   (furres-for-portraits -> #'dl-portraits -> portraits)
-   (furres-for-specitags -> #'dl-specitags -> specitags)))
+(threaded-petri-net ()
+  (update-digo-data-p -> #'dl-digo-data -> new-digo-data-p)
+  (new-digo-data-p old-digo-data-p -> #'save-digo-data)
+  (credentials -> #'login -> cookie-jars
+               -> #'dl-account -> accounts (accounts-furres *))
+  (accounts-furres (old-digo-data-p !)
+                   -> #'dl-furre
+                   -> furres
+                     (furres-costumes *)
+                     (furres-portraits *)
+                     (furres-specitags *)
+                     furres-images)
+  (furres-costumes -> #'dl-costume -> costumes)
+  (furres-portraits -> #'dl-portrait -> portraits)
+  (furres-specitags -> #'dl-specitag -> specitags)
+  (furres-images -> #'dl-image-list -> (image-metadata *))
+  (image-metadata -> #'dl-image -> images))
 ```
 
 ![Generated complex graph](example-complex.png)
@@ -232,6 +235,12 @@ In the above example, the programmer's intent was to store input in the
 Each transition accepts one token from the input bag and store either one token
 into each output bag (edges without labels) or an arbitrary number of tokens
 into each output bag (edges labeled with `*`).
+
+Additionally, an optional constraint is placed, in which `DL-FURRE` may not
+execute before `DL-DIGO-DATA` finishes executing. This is achieved via an extra
+place, `OLD-DIGO-DATA-P`, and an inhibitor edge leading from it. If this
+constraint is meant to be activated, then a pair of arbitrary tokens should be
+placed on `UPDATE-DIGO-DATA-P` and `OLD-DIGO-DATA-P`.
 
 ## Extending PETRI
 

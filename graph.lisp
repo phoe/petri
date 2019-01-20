@@ -15,8 +15,8 @@
 (defun make-object-from-bag (key count)
   (let* ((attributes `(,@(when (and (symbolp count)
                                     (string= count '!))
-                           '(:arrowtail :square
-                             :color :red))
+                           '(:dir :both
+                             :arrowtail :box))
                        ,@(when (and (symbolp count)
                                     (string= count '*))
                            '(:label " *"))
