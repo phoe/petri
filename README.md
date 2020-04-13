@@ -131,7 +131,7 @@ This ASDF system contains tests for `PETRI` and `PETRI-THREADED`.
 You do not need to explicitly load this system to run the tests; instead, use
 `(asdf:test-system :petri)`.
 
-See the file [tests.lisp](tests.lisp) for working examples in form of unit
+See the file [test.lisp](test.lisp) for working examples in form of unit
 tests. Each working test is run in four manners: using functional and
 declarative syntax, and using single-threaded and multithreaded implementations.
 
